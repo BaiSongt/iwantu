@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: ./next-app
+      dockerfile: Dockerfile
+      target: deps
+    container_name: iwantu-app-dev
+    command: npm run dev
+    volumes:
+      - ./next-app:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://iwantu:iwantu123@postgres:5432/iwantu
+      JWT_SECRET: dev-secret-change-in-production
+      NODE_ENV: development
+      UPLOAD_DIR: /data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - iwantu-network

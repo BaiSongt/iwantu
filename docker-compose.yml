@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: iwantu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: iwantu
+      POSTGRES_PASSWORD: iwantu123
+      POSTGRES_DB: iwantu
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iwantu -d iwantu"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iwantu-network
+
+  app:
+    build:
+      context: ./next-app
+      dockerfile: Dockerfile
+    container_name: iwantu-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://iwantu:iwantu123@postgres:5432/iwantu
+    ports:
+      - "3000:3000"
+    networks:
+      - iwantu-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  iwantu-network:
+    driver: bridge

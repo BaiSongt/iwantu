@@ -3,3 +3,12 @@ frontend/dist/
 
 *.log
 .DS_Store
+worktrees/
+
+# Docker volumes
+postgres_data/
+
+# Environment files
+.env
+.env.local
+.env.*.local
