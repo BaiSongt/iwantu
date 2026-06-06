@@ -1,0 +1,20 @@
+{
+  "name": "iWantU Marketplace MCP",
+  "version": "0.1.0",
+  "description": "MCP Server for iWantU AI capability marketplace",
+  "tools": [
+    {"name": "search_products", "description": "Search AI products by keyword, industry, or capability"},
+    {"name": "get_product_detail", "description": "Get detailed information about a specific product"},
+    {"name": "search_agents", "description": "Search AI agents by capability"},
+    {"name": "search_companies", "description": "Search AI companies and OPC teams"},
+    {"name": "search_solutions", "description": "Search solutions by industry or scenario"},
+    {"name": "create_demand_draft", "description": "Create a demand draft (requires auth)"},
+    {"name": "match_demand", "description": "Match a demand to products, agents, and companies"}
+  ],
+  "resources": [
+    {"uri": "iwantu://products", "description": "All public AI products"},
+    {"uri": "iwantu://agents", "description": "All public AI agents"},
+    {"uri": "iwantu://companies", "description": "All public companies"},
+    {"uri": "iwantu://solutions", "description": "All public solutions"}
+  ]
+}

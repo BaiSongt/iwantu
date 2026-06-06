@@ -1,0 +1,13 @@
+{
+  "name": "iWantU Marketplace Agent",
+  "description": "AI capability marketplace agent for product discovery, demand creation, solution matching and POC coordination.",
+  "url": "https://iwantu.ai/a2a",
+  "capabilities": ["product_discovery", "agent_discovery", "company_discovery", "solution_matching", "demand_drafting", "poc_coordination"],
+  "authentication": {"type": "oauth2"},
+  "actions": [
+    {"name": "searchProducts", "risk": "low"},
+    {"name": "createDemandDraft", "risk": "medium"},
+    {"name": "submitProposalDraft", "risk": "medium"},
+    {"name": "confirmContract", "risk": "high"}
+  ]
+}

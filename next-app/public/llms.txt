@@ -1,0 +1,35 @@
+# iWantU
+
+> AI capability marketplace for humans and autonomous AI agents.
+
+## Core Pages
+- Home: https://iwantu.ai/
+- AI Products: https://iwantu.ai/products
+- AI Agents: https://iwantu.ai/agents
+- AI Companies: https://iwantu.ai/companies
+- Solutions: https://iwantu.ai/solutions
+- Demand Hall: https://iwantu.ai/demands
+- Featured: https://iwantu.ai/featured
+
+## Public APIs
+- Products API: https://iwantu.ai/api/public/products
+- Agents API: https://iwantu.ai/api/public/agents
+- Companies API: https://iwantu.ai/api/public/companies
+- Solutions API: https://iwantu.ai/api/public/solutions
+- Search API: https://iwantu.ai/api/search?q=keyword
+
+## Agent Access
+- MCP Manifest: https://iwantu.ai/.well-known/mcp.json
+- A2A Agent Card: https://iwantu.ai/.well-known/agent-card.json
+
+## AI Access Levels
+- L0: Public content (no auth)
+- L1: Machine-readable content (JSON-LD, Markdown, API)
+- L2: Authenticated content
+- L3: Authorized content
+- L4: Sensitive content (strong auth + audit)
+- L5: AI execution actions (explicit auth)
+
+## Policies
+- AI Access Policy: https://iwantu.ai/policies/ai-access
+- Autonomous Action Policy: https://iwantu.ai/policies/agent-actions

@@ -1,0 +1,556 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum UserRole {
+  guest
+  buyer
+  supplier
+  opc_team
+  operator
+  admin
+}
+
+enum OrgType {
+  buyer
+  supplier
+  opc_team
+}
+
+enum DemandStatus {
+  draft
+  clarifying
+  awaiting_quote
+  collecting_proposals
+  in_poc
+  closed_deal
+  closed
+}
+
+enum ProductStatus {
+  draft
+  pending_review
+  published
+  needs_info
+  delisted
+  flagged
+}
+
+enum PocStatus {
+  not_started
+  confirming_requirements
+  uploading_sample_data
+  supplier_testing
+  result_review
+  procurement_discussion
+  completed
+  terminated
+}
+
+enum SampleDataStatus {
+  pending
+  uploaded
+  processing
+}
+
+enum PricingModel {
+  subscription
+  per_project
+  per_seat
+  pay_per_use
+  custom
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+  critical
+}
+
+enum MessageThreadType {
+  demand
+  poc
+  proposal
+  general
+}
+
+enum ProposalStatus {
+  draft
+  submitted
+  reviewed
+  accepted
+  rejected
+}
+
+enum AuditDecision {
+  allowed
+  denied
+  pending
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum AttachmentTargetType {
+  product
+  demand
+  proposal
+  poc
+  message
+}
+
+enum ReviewTargetType {
+  product
+  agent
+  company
+}
+
+enum FeaturedItemType {
+  product
+  agent
+  company
+  solution
+  team
+}
+
+// ============================================
+// Models
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  avatar    String?
+  role      UserRole @default(guest)
+  orgId     String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  organization        Organization?          @relation(fields: [orgId], references: [id])
+  organizationMembers OrganizationMember[]
+  demands             Demand[]               @relation("DemandOwner")
+  sentMessages        Message[]              @relation("MessageSender")
+  threadParticipants  ThreadParticipant[]
+  reviews             Review[]               @relation("ReviewAuthor")
+  auditLogs           AuditLog[]             @relation("AuditLogUser")
+  agentActions        AgentAction[]          @relation("AgentActionDelegator")
+
+  @@index([orgId])
+  @@index([role])
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  logo        String?
+  type        OrgType
+  industry    String?
+  description String?
+  certified   Boolean  @default(false)
+  memberCount Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  users          User[]
+  members        OrganizationMember[]
+  products       Product[]
+  agentProducts  AgentProduct[]
+  companyProfile CompanyProfile?
+  solutions      Solution[]              @relation("OrgSolutions")
+
+  @@index([type])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id        String   @id @default(cuid())
+  userId    String
+  orgId     String
+  role      String
+  createdAt DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@map("organization_members")
+}
+
+model Product {
+  id                       String        @id @default(cuid())
+  orgId                    String
+  name                     String
+  summary                  String
+  description              String        @default("")
+  coverImage               String?
+  category                 String
+  industryTags             String[]
+  capabilityTags           String[]
+  deploymentModes          String[]
+  pricingModel             PricingModel
+  price                    String
+  supportPoc               Boolean       @default(false)
+  supportPrivateDeployment Boolean       @default(false)
+  score                    String        @default("")
+  rating                   Float         @default(0)
+  caseCount                Int           @default(0)
+  pocCount                 Int           @default(0)
+  status                   ProductStatus @default(draft)
+  accent                   String        @default("blue")
+  shot                     String        @default("default")
+  tags                     String[]
+  createdAt                DateTime      @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@index([status])
+  @@index([category])
+  @@map("products")
+}
+
+model AgentProduct {
+  id              String        @id @default(cuid())
+  orgId           String
+  name            String
+  summary         String
+  description     String        @default("")
+  taskGoal        String        @default("")
+  inputSpec       String[]
+  outputSpec      String[]
+  toolCalls       String[]
+  successRate     Float         @default(0)
+  deploymentModes String[]
+  pricingModel    PricingModel  @default(custom)
+  price           String        @default("")
+  supportPoc      Boolean       @default(false)
+  riskLevel       RiskLevel     @default(low)
+  status          ProductStatus @default(draft)
+  tags            String[]
+  deploy          String        @default("")
+  accent          String        @default("blue")
+  shot            String        @default("default")
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@index([status])
+  @@map("agent_products")
+}
+
+model CompanyProfile {
+  id                 String   @id @default(cuid())
+  orgId              String   @unique
+  slogan             String
+  description        String
+  certifications     String[]
+  capabilities       String[]
+  industryExperience String[]
+  deliveryScope      String[]
+  caseStudies        String[]
+  rating             Float    @default(0)
+  responseRate       Float    @default(0)
+  certified          Boolean  @default(false)
+  tags               String[]
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@map("company_profiles")
+}
+
+model Demand {
+  id                    String       @id @default(cuid())
+  ownerUserId           String
+  ownerOrgId            String?
+  title                 String
+  industry              String
+  budgetMin             Float?
+  budgetMax             Float?
+  budgetRange           String
+  deliveryPeriod        String
+  dataTypes             String[]
+  deploymentRequirement String
+  description           String       @default("")
+  painPoints            String       @default("")
+  existingSystems       String       @default("")
+  supportPoc            Boolean      @default(false)
+  allowAiSupplier       Boolean      @default(false)
+  allowAiAutoBid        Boolean      @default(false)
+  status                DemandStatus @default(draft)
+  matchScore            String       @default("")
+  matchScoreNum         Float        @default(0)
+  createdAt             DateTime     @default(now())
+
+  ownerUser   User          @relation("DemandOwner", fields: [ownerUserId], references: [id])
+  proposals   Proposal[]
+  pocProjects PocProject[]
+
+  @@index([ownerUserId])
+  @@index([ownerOrgId])
+  @@index([status])
+  @@index([industry])
+  @@map("demands")
+}
+
+model Solution {
+  id                    String   @id @default(cuid())
+  orgId                 String?
+  title                 String
+  summary               String
+  description           String   @default("")
+  industry              String[]
+  scenario              String
+  budgetRange           String?
+  deploymentModes       String[]
+  deliveryPeriod        String?
+  supportPoc            Boolean  @default(true)
+  components            String[]
+  recommendedProductIds String[]
+  recommendedCompanyIds String[]
+  createdAt             DateTime @default(now())
+
+  organization Organization? @relation("OrgSolutions", fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@map("solutions")
+}
+
+model PocProject {
+  id                 String           @id @default(cuid())
+  demandId           String
+  productId          String?
+  supplierOrgId      String?
+  status             PocStatus        @default(not_started)
+  testMetrics        String[]
+  acceptanceCriteria String[]
+  sampleDataStatus   SampleDataStatus @default(pending)
+  startDate          DateTime         @default(now())
+  endDate            DateTime?
+
+  demand      Demand          @relation(fields: [demandId], references: [id])
+  participants PocParticipant[]
+
+  @@index([demandId])
+  @@index([status])
+  @@map("poc_projects")
+}
+
+model PocParticipant {
+  id           String @id @default(cuid())
+  pocProjectId String
+  userId       String
+  role         String
+  orgId        String
+
+  pocProject PocProject @relation(fields: [pocProjectId], references: [id], onDelete: Cascade)
+
+  @@index([pocProjectId])
+  @@index([userId])
+  @@map("poc_participants")
+}
+
+model Proposal {
+  id             String         @id @default(cuid())
+  demandId       String
+  supplierOrgId  String
+  title          String
+  scope          String
+  price          Float
+  currency       String         @default("CNY")
+  deliveryPeriod String?
+  status         ProposalStatus @default(draft)
+  createdAt      DateTime       @default(now())
+
+  demand     Demand      @relation(fields: [demandId], references: [id])
+  milestones Milestone[]
+  quoteItems QuoteItem[]
+
+  @@index([demandId])
+  @@index([supplierOrgId])
+  @@index([status])
+  @@map("proposals")
+}
+
+model Milestone {
+  id           String  @id @default(cuid())
+  proposalId   String
+  name         String
+  description  String?
+  duration     String
+  deliverables String[]
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("milestones")
+}
+
+model QuoteItem {
+  id          String @id @default(cuid())
+  proposalId  String
+  name        String
+  description String?
+  quantity    Float  @default(1)
+  unit        String @default("项")
+  unitPrice   Float
+  totalPrice  Float
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("quote_items")
+}
+
+model MessageThread {
+  id            String             @id @default(cuid())
+  title         String
+  type          MessageThreadType
+  relatedId     String?
+  lastMessage   String             @default("")
+  lastMessageAt DateTime           @default(now())
+
+  messages     Message[]
+  participants ThreadParticipant[]
+
+  @@index([type])
+  @@index([relatedId])
+  @@map("message_threads")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  threadId       String
+  senderId       String
+  senderName     String
+  content        String
+  isAiGenerated  Boolean  @default(false)
+  timestamp      DateTime @default(now())
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User          @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@index([threadId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model ThreadParticipant {
+  id       String @id @default(cuid())
+  threadId String
+  userId   String
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id])
+
+  @@unique([threadId, userId])
+  @@index([userId])
+  @@map("thread_participants")
+}
+
+model AuditLog {
+  id            String       @id @default(cuid())
+  agentId       String?
+  userId        String
+  action        String
+  targetType    String
+  targetId      String
+  riskLevel     RiskLevel
+  decision      AuditDecision
+  inputPayload  String?
+  outputPayload String?
+  createdAt     DateTime     @default(now())
+
+  user User @relation("AuditLogUser", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model AgentAction {
+  id              String        @id @default(cuid())
+  agentId         String?
+  delegatorUserId String?
+  organizationId  String?
+  actionType      String
+  targetType      String
+  targetId        String
+  inputPayload    String?
+  outputPayload   String?
+  riskLevel       RiskLevel     @default(low)
+  decision        AuditDecision @default(allowed)
+  approvalStatus  ApprovalStatus @default(pending)
+  createdAt       DateTime      @default(now())
+
+  delegator User? @relation("AgentActionDelegator", fields: [delegatorUserId], references: [id])
+
+  @@index([agentId])
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@map("agent_actions")
+}
+
+model Attachment {
+  id          String               @id @default(cuid())
+  targetType  AttachmentTargetType
+  targetId    String
+  fileName    String
+  fileSize    Float
+  fileType    String
+  url         String
+  isSensitive Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+
+  @@index([targetType, targetId])
+  @@map("attachments")
+}
+
+model Review {
+  id         String          @id @default(cuid())
+  targetType ReviewTargetType
+  targetId   String
+  userId     String
+  rating     Float
+  content    String
+  createdAt  DateTime        @default(now())
+
+  author User @relation("ReviewAuthor", fields: [userId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([userId])
+  @@map("reviews")
+}
+
+model FeaturedItem {
+  id          String           @id @default(cuid())
+  itemType    FeaturedItemType
+  itemId      String
+  title       String
+  description String?
+  position    Int              @default(0)
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+
+  @@index([itemType])
+  @@index([active])
+  @@map("featured_items")
+}
