@@ -73,6 +73,7 @@ export async function registerAction(
   email: string,
   password: string,
   role: string,
+  orgName?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     if (!name || !email || !password || !role) {
@@ -94,22 +95,70 @@ export async function registerAction(
     }
 
     const passwordHash = await hashPassword(password);
-    const newUser = await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        role: role as UserRole,
-      },
-    });
 
-    await createSessionCookie({
-      userId: newUser.id,
-      email: newUser.email,
-      name: newUser.name,
-      role: newUser.role,
-      orgId: newUser.orgId ?? undefined,
-    });
+    // Determine org type from user role
+    const orgType = role === 'buyer' ? 'buyer' : role === 'supplier' ? 'supplier' : 'opc_team';
+
+    // Use transaction when orgName is provided to ensure atomicity
+    if (orgName && orgName.trim()) {
+      const result = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.user.create({
+          data: {
+            name,
+            email,
+            passwordHash,
+            role: role as UserRole,
+          },
+        });
+
+        const org = await tx.organization.create({
+          data: {
+            name: orgName.trim(),
+            type: orgType,
+          },
+        });
+
+        await tx.organizationMember.create({
+          data: {
+            userId: newUser.id,
+            orgId: org.id,
+            role: 'owner',
+          },
+        });
+
+        const updatedUser = await tx.user.update({
+          where: { id: newUser.id },
+          data: { orgId: org.id },
+        });
+
+        return { user: updatedUser, orgId: org.id };
+      });
+
+      await createSessionCookie({
+        userId: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+        role: result.user.role,
+        orgId: result.orgId,
+      });
+    } else {
+      const newUser = await prisma.user.create({
+        data: {
+          name,
+          email,
+          passwordHash,
+          role: role as UserRole,
+        },
+      });
+
+      await createSessionCookie({
+        userId: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        orgId: newUser.orgId ?? undefined,
+      });
+    }
 
     return { success: true };
   } catch {

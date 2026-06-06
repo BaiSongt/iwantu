@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     if ('error' in auth) return auth.error;
 
     const proposals = await getProposals({
-      supplierOrgId: auth.user.orgId,
+      supplierOrgId: auth.user.orgId ?? undefined,
     });
 
     return apiSuccess(proposals);
@@ -26,6 +26,13 @@ export async function POST(request: Request) {
   try {
     const auth = await requireRole(request, ['supplier']);
     if ('error' in auth) return auth.error;
+
+    if (!auth.user.orgId) {
+      return NextResponse.json(
+        { error: '请先创建或加入组织' },
+        { status: 403 },
+      );
+    }
 
     const body = await request.json();
 

@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const auth = await requireRole(request, ['supplier']);
     if ('error' in auth) return auth.error;
 
-    const products = await getProducts({ orgId: auth.user.orgId });
+    const products = await getProducts({ orgId: auth.user.orgId ?? undefined });
 
     return apiSuccess(products);
   } catch (error) {
@@ -24,6 +24,13 @@ export async function POST(request: Request) {
   try {
     const auth = await requireRole(request, ['supplier']);
     if ('error' in auth) return auth.error;
+
+    if (!auth.user.orgId) {
+      return NextResponse.json(
+        { error: '请先创建或加入组织' },
+        { status: 403 },
+      );
+    }
 
     const body = await request.json();
 

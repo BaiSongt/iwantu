@@ -34,6 +34,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('buyer');
+  const [orgName, setOrgName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -43,7 +44,7 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const result = await registerAction(name, email, password, role);
+      const result = await registerAction(name, email, password, role, orgName || undefined);
       if (result.success) {
         router.push('/');
         router.refresh();
@@ -178,6 +179,27 @@ export default function RegisterPage() {
               })}
             </div>
           </div>
+
+          {/* Organization Name - Optional, hidden for opc_team */}
+          {role !== 'opc_team' && (
+            <div className="animate-[fade-up_0.25s_ease-out]">
+              <label htmlFor="orgName" className="block text-sm font-medium text-foreground mb-1.5">
+                组织名称（选填）
+              </label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+                <input
+                  id="orgName"
+                  type="text"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="输入组织或公司名称"
+                  className="w-full rounded-lg border border-line bg-white pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted/60 outline-none transition-all duration-160 focus:border-primary focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted">注册后将自动创建并加入该组织</p>
+            </div>
+          )}
 
           {/* Submit */}
           <button

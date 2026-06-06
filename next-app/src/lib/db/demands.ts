@@ -108,7 +108,7 @@ export async function getDemandById(id: string): Promise<Demand | null> {
       where: { id },
       include: { ownerUser: true },
     });
-    return toDemandShape(row);
+    return row ? toDemandShape(row) : null;
   } catch (error) {
     console.error('[DAL] getDemandById failed:', error);
     return null;

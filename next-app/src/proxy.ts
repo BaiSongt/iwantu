@@ -1,88 +1,118 @@
+/**
+ * Next.js Proxy (middleware) — Route Protection via JWT Cookie Verification
+ *
+ * Runs in the Edge Runtime to protect specific routes (dashboard, publish,
+ * messages, etc.) by verifying the `iwantu_session` JWT cookie.
+ *
+ * Uses the `jose` library directly — NOT `@/lib/auth`, which imports
+ * Prisma / bcryptjs and cannot run in the Edge Runtime.
+ *
+ * On successful verification the proxy attaches `x-user-id` and
+ * `x-user-role` headers so downstream handlers can read them without
+ * re-verifying the token.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const secretKey = process.env.JWT_SECRET || 'iwantu-platform-jwt-secret-change-in-production-2024';
+// ---------------------------------------------------------------------------
+// JWT configuration (must match src/lib/auth.ts)
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIE = 'iwantu_session';
+
+const secretKey =
+  process.env.JWT_SECRET ||
+  'iwantu-platform-jwt-secret-change-in-production-2024';
 const encodedKey = new TextEncoder().encode(secretKey);
 
-const protectedRoutes = [
-  '/dashboard',
-  '/demands/publish',
-  '/products/publish',
-  '/messages',
-  '/quote',
-];
+// ---------------------------------------------------------------------------
+// Helper: verify the JWT and return its payload, or null on failure
+// ---------------------------------------------------------------------------
 
-const publicRoutes = [
-  '/',
-  '/products',
-  '/agents',
-  '/companies',
-  '/demands',
-  '/solutions',
-  '/featured',
-  '/match',
-  '/poc',
-];
-
-function isProtected(pathname: string): boolean {
-  return protectedRoutes.some((route) => pathname === route || pathname.startsWith(route + '/'));
+interface MiddlewareTokenPayload {
+  userId?: string;
+  email?: string;
+  name?: string;
+  role?: string;
+  orgId?: string;
 }
 
-function isPublic(pathname: string): boolean {
-  return (
-    publicRoutes.some((route) => pathname === route || pathname.startsWith(route + '/')) ||
-    pathname.startsWith('/auth') ||
-    pathname.startsWith('/api')
-  );
+/**
+ * Lightweight JWT verification for the Edge Runtime.
+ * Returns the decoded payload or `null` when the token is missing / invalid.
+ */
+async function verifySessionToken(
+  token: string,
+): Promise<MiddlewareTokenPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, encodedKey, {
+      algorithms: ['HS256'],
+    });
+    return payload as unknown as MiddlewareTokenPayload;
+  } catch {
+    return null;
+  }
 }
 
-export async function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+// ---------------------------------------------------------------------------
+// Middleware entry point
+// ---------------------------------------------------------------------------
 
-  // Skip middleware for static files, _next, etc.
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
-    pathname.includes('.') // static files
-  ) {
-    return NextResponse.next();
+export async function proxy(request: NextRequest) {
+  // Extract session cookie
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+
+  if (!token) {
+    return redirectToLogin(request);
   }
 
-  // Read session cookie
-  const token = req.cookies.get('iwantu_session')?.value;
+  // Verify JWT
+  const payload = await verifySessionToken(token);
 
-  let userId: string | null = null;
-  let userRole: string | null = null;
-
-  if (token) {
-    try {
-      const { payload } = await jwtVerify(token, encodedKey, {
-        algorithms: ['HS256'],
-      });
-      userId = (payload.userId as string) || null;
-      userRole = (payload.role as string) || null;
-    } catch {
-      // Token invalid or expired
-    }
+  if (!payload || !payload.userId) {
+    return redirectToLogin(request);
   }
 
-  // Redirect unauthenticated users on protected routes to login
-  if (isProtected(pathname) && !userId) {
-    const loginUrl = new URL('/auth/login', req.nextUrl);
-    loginUrl.searchParams.set('callbackUrl', pathname);
-    return NextResponse.redirect(loginUrl);
+  // Token is valid — attach user info as request headers for downstream use
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-user-id', payload.userId);
+  if (payload.role) {
+    requestHeaders.set('x-user-role', payload.role);
   }
 
-  // Set user info headers for downstream consumption
-  const response = NextResponse.next();
-  if (userId) {
-    response.headers.set('x-user-id', userId);
-    response.headers.set('x-user-role', userRole || '');
-  }
-
-  return response;
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Redirect helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Redirect the user to the login page with the current URL encoded as the
+ * `callbackUrl` query parameter so the login flow can return them here.
+ */
+function redirectToLogin(request: NextRequest): NextResponse {
+  const loginUrl = new URL('/auth/login', request.url);
+  loginUrl.searchParams.set('callbackUrl', request.nextUrl.pathname);
+  return NextResponse.redirect(loginUrl);
+}
+
+// ---------------------------------------------------------------------------
+// Route matcher — only the routes listed below will invoke the proxy;
+// everything else (home, auth, public browse pages, APIs, etc.) is skipped.
+// ---------------------------------------------------------------------------
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/dashboard/:path*',
+    '/demands/publish',
+    '/products/publish',
+    '/supplier/:path*',
+    '/messages/:path*',
+  ],
 };

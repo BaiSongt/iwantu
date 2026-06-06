@@ -194,9 +194,15 @@ export async function updateProduct(
   }>,
 ): Promise<Product | null> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: any = { ...data };
+    if (data.pricingModel) updateData.pricingModel = data.pricingModel as any;
+    if (data.status) updateData.status = data.status as any;
+    if (data.deploymentModes) updateData.deploymentModes = data.deploymentModes as any;
+
     const row = await prisma.product.update({
       where: { id },
-      data,
+      data: updateData,
       include: { organization: true },
     });
 
