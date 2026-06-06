@@ -1,21 +1,27 @@
-import { COMPANIES } from '@/lib/constants';
+import { getCompanyById } from '@/lib/db/companies';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const company = COMPANIES.find((c) => c.id === id);
+  try {
+    const { id } = await params;
+    const company = await getCompanyById(id);
 
-  if (!company) {
-    return Response.json(
-      { error: 'Company not found' },
-      { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
+    if (!company) {
+      return Response.json(
+        { error: '公司不存在' },
+        { status: 404, headers: corsHeaders() },
+      );
+    }
+
+    return apiSuccess(company);
+  } catch (error) {
+    return handleApiError(error);
   }
+}
 
-  return Response.json(
-    { data: company },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

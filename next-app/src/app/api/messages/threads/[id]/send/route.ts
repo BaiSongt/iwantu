@@ -1,24 +1,42 @@
-import type { Message } from '@/types';
+import { requireAuth } from '@/lib/auth-helpers';
+import { sendMessage } from '@/lib/db/messages';
+import { apiSuccess, handleApiError } from '@/lib/api-utils';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const body = await request.json();
+  try {
+    const auth = await requireAuth(request);
+    if ('error' in auth) return auth.error;
 
-  const newMessage: Message = {
-    id: `m${Date.now()}`,
-    threadId: id,
-    senderId: 'mock-user',
-    senderName: '采购方用户',
-    content: body.content ?? '',
-    isAiGenerated: body.isAiGenerated ?? false,
-    timestamp: new Date().toISOString(),
-  };
+    const { id: threadId } = await params;
+    const body = await request.json();
+    const { content, isAiGenerated } = body;
 
-  return Response.json(
-    { data: newMessage },
-    { status: 201, headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    if (!content) {
+      return Response.json(
+        { error: '缺少必要字段：content' },
+        { status: 400 },
+      );
+    }
+
+    const message = await sendMessage(
+      threadId,
+      auth.user.id,
+      content,
+      isAiGenerated ?? false,
+    );
+
+    if (!message) {
+      return Response.json(
+        { error: '发送消息失败' },
+        { status: 500 },
+      );
+    }
+
+    return apiSuccess(message, 201);
+  } catch (error) {
+    return handleApiError(error);
+  }
 }

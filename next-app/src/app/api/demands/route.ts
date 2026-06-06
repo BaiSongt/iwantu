@@ -1,42 +1,57 @@
-import { DEMANDS } from '@/lib/constants';
-import type { Demand } from '@/types';
+import { getDemands, createDemand } from '@/lib/db/demands';
+import { requireAuth } from '@/lib/auth-helpers';
+import { apiSuccess, handleApiError } from '@/lib/api-utils';
 
-export async function GET() {
-  // "My demands" — for now return all demands (mock auth)
-  return Response.json(
-    { data: DEMANDS satisfies Demand[] },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+
+    const filters: Parameters<typeof getDemands>[0] = {};
+    const industry = searchParams.get('industry');
+    const status = searchParams.get('status');
+    const search = searchParams.get('search');
+
+    if (industry) filters.industry = industry;
+    if (status) filters.status = status;
+    if (search) filters.search = search;
+
+    const demands = await getDemands(filters);
+    return apiSuccess(demands);
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  try {
+    const auth = await requireAuth(request);
+    if ('error' in auth) return auth.error;
 
-  const newDemand: Demand = {
-    id: `d${Date.now()}`,
-    title: body.title ?? '',
-    industry: body.industry ?? '',
-    budgetRange: body.budgetRange ?? '',
-    budgetMin: body.budgetMin,
-    budgetMax: body.budgetMax,
-    deliveryPeriod: body.deliveryPeriod ?? '',
-    dataTypes: body.dataTypes ?? [],
-    deploymentRequirement: body.deploymentRequirement ?? '',
-    description: body.description ?? '',
-    painPoints: body.painPoints ?? '',
-    existingSystems: body.existingSystems ?? '',
-    supportPoc: body.supportPoc ?? false,
-    allowAiSupplier: body.allowAiSupplier ?? true,
-    matchScore: '0%',
-    matchScoreNum: 0,
-    status: 'draft',
-    ownerUser: 'mock-user',
-    ownerOrg: 'mock-org',
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
+    const body = await request.json();
 
-  return Response.json(
-    { data: newDemand },
-    { status: 201, headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    const demand = await createDemand({
+      ownerUserId: auth.user.id,
+      title: body.title ?? '',
+      industry: body.industry ?? '',
+      budgetRange: body.budgetRange ?? '',
+      budgetMin: body.budgetMin,
+      budgetMax: body.budgetMax,
+      deliveryPeriod: body.deliveryPeriod ?? '',
+      dataTypes: body.dataTypes ?? [],
+      deploymentRequirement: body.deploymentRequirement ?? '',
+      description: body.description ?? '',
+      painPoints: body.painPoints ?? '',
+      existingSystems: body.existingSystems ?? '',
+      supportPoc: body.supportPoc ?? false,
+      allowAiSupplier: body.allowAiSupplier ?? true,
+    });
+
+    if (!demand) {
+      return Response.json({ error: '创建需求失败' }, { status: 500 });
+    }
+
+    return apiSuccess(demand, 201);
+  } catch (error) {
+    return handleApiError(error);
+  }
 }

@@ -1,41 +1,18 @@
-import { PRODUCTS, COMPANIES, SOLUTIONS } from '@/lib/constants';
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
+import { searchAll } from '@/lib/db/search';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
-  const q = (request.nextUrl.searchParams.get('q') ?? '').toLowerCase().trim();
+  try {
+    const q = request.nextUrl.searchParams.get('q') ?? '';
+    const result = await searchAll(q);
 
-  if (!q) {
-    return Response.json(
-      { data: { products: [], companies: [], solutions: [] } },
-      { headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
+    return apiSuccess(result);
+  } catch (error) {
+    return handleApiError(error);
   }
+}
 
-  const match = (text: string) => text.toLowerCase().includes(q);
-
-  const products = PRODUCTS.filter(
-    (p) =>
-      match(p.name) ||
-      match(p.summary) ||
-      p.tags.some(match),
-  );
-
-  const companies = COMPANIES.filter(
-    (c) =>
-      match(c.name) ||
-      match(c.slogan) ||
-      c.tags.some(match),
-  );
-
-  const solutions = SOLUTIONS.filter(
-    (s) =>
-      match(s.title) ||
-      match(s.summary) ||
-      s.industry.some(match),
-  );
-
-  return Response.json(
-    { data: { products, companies, solutions } },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

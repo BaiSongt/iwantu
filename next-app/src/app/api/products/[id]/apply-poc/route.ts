@@ -1,31 +1,32 @@
-import { PRODUCTS } from '@/lib/constants';
+import { getProductById } from '@/lib/db/products';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const product = PRODUCTS.find((p) => p.id === id);
+  try {
+    const { id } = await params;
+    const product = await getProductById(id);
 
-  if (!product) {
-    return Response.json(
-      { error: 'Product not found' },
-      { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
-  }
+    if (!product) {
+      return Response.json(
+        { error: '产品不存在' },
+        { status: 404, headers: corsHeaders() },
+      );
+    }
 
-  if (!product.supportPoc) {
-    return Response.json(
-      { error: 'This product does not support POC' },
-      { status: 400, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
-  }
+    if (!product.supportPoc) {
+      return Response.json(
+        { error: '该产品不支持 POC' },
+        { status: 400, headers: corsHeaders() },
+      );
+    }
 
-  const body = await request.json();
+    const body = await request.json();
 
-  return Response.json(
-    {
-      data: {
+    return apiSuccess(
+      {
         success: true,
         message: `POC application submitted for "${product.name}" by ${product.company}`,
         poc: {
@@ -37,7 +38,13 @@ export async function POST(
           description: body.description ?? '',
         },
       },
-    },
-    { status: 201, headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+      201,
+    );
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

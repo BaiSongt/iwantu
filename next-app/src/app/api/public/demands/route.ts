@@ -1,14 +1,19 @@
-import { DEMANDS } from '@/lib/constants';
-import type { Demand } from '@/types';
+import { getDemands } from '@/lib/db/demands';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function GET() {
-  // Return only public-safe fields for each demand
-  const publicDemands: Partial<Demand>[] = DEMANDS.map(
-    ({ ownerUser, ownerOrg, ...rest }) => rest,
-  );
+  try {
+    const demands = await getDemands({ status: 'collecting_proposals' });
 
-  return Response.json(
-    { data: publicDemands },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    // Return only public-safe fields for each demand
+    const publicDemands = demands.map(({ ownerUser, ownerOrg, ...rest }) => rest);
+
+    return apiSuccess(publicDemands);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

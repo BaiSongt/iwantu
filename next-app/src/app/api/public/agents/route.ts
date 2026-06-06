@@ -1,13 +1,23 @@
-import { PRODUCTS } from '@/lib/constants';
+import { NextRequest } from 'next/server';
+import { getAgents } from '@/lib/db/agents';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
-export async function GET() {
-  // "Agents" are products that have 'Agent' in their tags
-  const agents = PRODUCTS.filter(
-    (p) => p.tags.some((t) => t.toLowerCase().includes('agent')),
-  );
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = request.nextUrl;
+    const filters = {
+      status: searchParams.get('status') ?? undefined,
+      riskLevel: searchParams.get('riskLevel') ?? undefined,
+      search: searchParams.get('search') ?? undefined,
+    };
 
-  return Response.json(
-    { data: agents },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    const agents = await getAgents(filters);
+    return apiSuccess(agents);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

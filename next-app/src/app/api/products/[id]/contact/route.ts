@@ -1,34 +1,38 @@
-import { PRODUCTS } from '@/lib/constants';
+import { getProductById } from '@/lib/db/products';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const product = PRODUCTS.find((p) => p.id === id);
+  try {
+    const { id } = await params;
+    const product = await getProductById(id);
 
-  if (!product) {
-    return Response.json(
-      { error: 'Product not found' },
-      { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
-  }
+    if (!product) {
+      return Response.json(
+        { error: '产品不存在' },
+        { status: 404, headers: corsHeaders() },
+      );
+    }
 
-  const body = await request.json();
+    const body = await request.json();
 
-  return Response.json(
-    {
-      data: {
-        success: true,
-        message: `Contact request sent to ${product.company} for "${product.name}"`,
-        contactInfo: {
-          company: product.company,
-          productId: product.id,
-          productName: product.name,
-          note: body.message ?? '',
-        },
+    return apiSuccess({
+      success: true,
+      message: `Contact request sent to ${product.company} for "${product.name}"`,
+      contactInfo: {
+        company: product.company,
+        productId: product.id,
+        productName: product.name,
+        note: body.message ?? '',
       },
-    },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
 }

@@ -1,85 +1,40 @@
-import type { Proposal } from '@/types';
+import { NextResponse } from 'next/server';
+import { getProposalById } from '@/lib/db/proposals';
+import { requireAuth, requireRole } from '@/lib/auth-helpers';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
-// In-memory mock proposals (shared with parent route in production, duplicated for mock)
-const proposals: Proposal[] = [
-  {
-    id: 'prop1',
-    demandId: 'd1',
-    supplierId: 'mock-supplier',
-    title: '知识库问答系统实施提案',
-    scope: '包含需求分析、系统设计、开发部署及培训',
-    price: 250000,
-    currency: 'CNY',
-    milestones: [
-      {
-        name: '需求确认与方案设计',
-        description: '确认详细需求，输出技术方案文档',
-        duration: '2周',
-        deliverables: ['需求规格说明书', '技术方案文档'],
-      },
-      {
-        name: '系统开发与集成',
-        description: '知识库搭建、问答引擎开发、系统集成',
-        duration: '4周',
-        deliverables: ['可运行系统', '集成测试报告'],
-      },
-      {
-        name: '部署上线与培训',
-        description: '私有云部署、用户培训及验收',
-        duration: '2周',
-        deliverables: ['部署文档', '培训材料', '验收报告'],
-      },
-    ],
-    acceptanceCriteria: [
-      '问答准确率 >= 90%',
-      '系统响应时间 < 3秒',
-      '支持至少1000个并发用户',
-    ],
-    deliveryPeriod: '8周',
-    status: 'submitted',
-    createdAt: '2025-06-05',
-  },
-];
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const proposal = proposals.find((p) => p.id === id);
+  try {
+    const auth = await requireRole(request, ['supplier']);
+    if ('error' in auth) return auth.error;
 
-  if (!proposal) {
-    return Response.json(
-      { error: 'Proposal not found' },
-      { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
+    const { id } = await params;
+    const proposal = await getProposalById(id);
+
+    if (!proposal) {
+      return NextResponse.json(
+        { error: '提案不存在' },
+        { status: 404, headers: corsHeaders() },
+      );
+    }
+
+    // 验证提案属于当前供应商组织
+    if (proposal.supplierId !== auth.user.orgId) {
+      return NextResponse.json(
+        { error: '无权限访问该提案' },
+        { status: 403, headers: corsHeaders() },
+      );
+    }
+
+    return apiSuccess(proposal);
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  return Response.json(
-    { data: proposal },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
-}
-
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  const proposal = proposals.find((p) => p.id === id);
-
-  if (!proposal) {
-    return Response.json(
-      { error: 'Proposal not found' },
-      { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } },
-    );
-  }
-
-  const body = await request.json();
-  const updated = { ...proposal, ...body, id: proposal.id };
-
-  return Response.json(
-    { data: updated },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
 }

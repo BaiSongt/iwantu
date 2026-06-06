@@ -17,6 +17,7 @@ import type { Product } from '@/types';
  * @returns Array of Product objects matching the filters
  */
 export async function getProducts(filters?: {
+  orgId?: string;
   industry?: string;
   category?: string;
   status?: string;
@@ -24,6 +25,10 @@ export async function getProducts(filters?: {
 }): Promise<Product[]> {
   try {
     const where: Record<string, unknown> = {};
+
+    if (filters?.orgId) {
+      where.orgId = filters.orgId;
+    }
 
     if (filters?.status) {
       where.status = filters.status;

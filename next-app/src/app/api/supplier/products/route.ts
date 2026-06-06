@@ -1,49 +1,60 @@
-import { PRODUCTS } from '@/lib/constants';
-import type { Product } from '@/types';
+import { NextResponse } from 'next/server';
+import { getProducts, createProduct } from '@/lib/db/products';
+import { requireAuth, requireRole } from '@/lib/auth-helpers';
+import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
-export async function GET() {
-  // "My products" — for now return all published products (mock auth)
-  const myProducts = PRODUCTS.filter((p) => p.status === 'published');
-  return Response.json(
-    { data: myProducts satisfies Product[] },
-    { headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
+
+export async function GET(request: Request) {
+  try {
+    const auth = await requireRole(request, ['supplier']);
+    if ('error' in auth) return auth.error;
+
+    const products = await getProducts({ orgId: auth.user.orgId });
+
+    return apiSuccess(products);
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  try {
+    const auth = await requireRole(request, ['supplier']);
+    if ('error' in auth) return auth.error;
 
-  const newProduct: Product = {
-    id: `p${Date.now()}`,
-    name: body.name ?? '',
-    company: body.company ?? 'Mock Supplier',
-    companyLogo: body.companyLogo,
-    summary: body.summary ?? '',
-    description: body.description ?? '',
-    coverImage: body.coverImage,
-    gallery: body.gallery,
-    category: body.category ?? '',
-    industryTags: body.industryTags ?? [],
-    capabilityTags: body.capabilityTags ?? [],
-    deploymentModes: body.deploymentModes ?? ['saas'],
-    pricingModel: body.pricingModel ?? 'custom',
-    price: body.price ?? '',
-    supportPoc: body.supportPoc ?? false,
-    supportPrivateDeployment: body.supportPrivateDeployment ?? false,
-    score: '0分',
-    rating: 0,
-    caseCount: 0,
-    pocCount: 0,
-    status: 'draft',
-    accent: body.accent ?? 'blue',
-    shot: body.shot ?? '',
-    tags: body.tags ?? [],
-    deploy: body.deploy ?? 'SaaS',
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
+    const body = await request.json();
 
-  return Response.json(
-    { data: newProduct },
-    { status: 201, headers: { 'Access-Control-Allow-Origin': '*' } },
-  );
+    const product = await createProduct({
+      orgId: auth.user.orgId,
+      name: body.name ?? '',
+      summary: body.summary ?? '',
+      description: body.description,
+      coverImage: body.coverImage,
+      category: body.category ?? '',
+      industryTags: body.industryTags,
+      capabilityTags: body.capabilityTags,
+      deploymentModes: body.deploymentModes,
+      pricingModel: body.pricingModel,
+      price: body.price,
+      supportPoc: body.supportPoc,
+      supportPrivateDeployment: body.supportPrivateDeployment,
+      accent: body.accent,
+      shot: body.shot,
+      tags: body.tags,
+    });
+
+    if (!product) {
+      return NextResponse.json(
+        { error: '创建产品失败' },
+        { status: 500, headers: corsHeaders() },
+      );
+    }
+
+    return apiSuccess(product, 201);
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
