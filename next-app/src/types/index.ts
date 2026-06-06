@@ -92,6 +92,7 @@ export interface Product {
   name: string;
   company: string;
   companyLogo?: string;
+  orgId?: string;
   summary: string;
   description: string;
   coverImage?: string;

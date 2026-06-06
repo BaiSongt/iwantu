@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProductById, updateProduct } from '@/lib/db/products';
-import { requireAuth, requireRole } from '@/lib/auth-helpers';
+import { requireRole } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function OPTIONS() {
@@ -26,7 +26,7 @@ export async function GET(
     }
 
     // 验证产品属于当前用户的组织
-    if ((product as Record<string, unknown>).orgId !== auth.user.orgId) {
+    if (product.orgId !== auth.user.orgId) {
       return NextResponse.json(
         { error: '无权限访问该产品' },
         { status: 403, headers: corsHeaders() },
@@ -58,7 +58,7 @@ export async function PUT(
       );
     }
 
-    if ((existing as Record<string, unknown>).orgId !== auth.user.orgId) {
+    if (existing.orgId !== auth.user.orgId) {
       return NextResponse.json(
         { error: '无权限修改该产品' },
         { status: 403, headers: corsHeaders() },

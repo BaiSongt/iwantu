@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProposalById } from '@/lib/db/proposals';
-import { requireAuth, requireRole } from '@/lib/auth-helpers';
+import { requireRole } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function OPTIONS() {

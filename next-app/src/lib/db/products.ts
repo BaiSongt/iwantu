@@ -213,6 +213,7 @@ export async function updateProduct(
 
 function mapProductRow(row: {
   id: string;
+  orgId: string;
   name: string;
   summary: string;
   description: string;
@@ -238,6 +239,7 @@ function mapProductRow(row: {
 }): Product {
   return {
     id: row.id,
+    orgId: row.orgId,
     name: row.name,
     company: row.organization?.name ?? '',
     companyLogo: row.organization?.logo ?? undefined,

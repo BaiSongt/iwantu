@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProducts, createProduct } from '@/lib/db/products';
-import { requireAuth, requireRole } from '@/lib/auth-helpers';
+import { requireRole } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 
 export async function OPTIONS() {
