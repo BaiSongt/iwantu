@@ -1,536 +1,858 @@
 import { PrismaClient } from '@prisma/client';
-import { PRODUCTS, DEMANDS, COMPANIES, SOLUTIONS } from '../src/lib/constants';
+import { hashSync } from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Seeding database...');
 
-  // Clean up existing data (order matters due to foreign keys)
-  await prisma.featuredItem.deleteMany();
-  await prisma.review.deleteMany();
-  await prisma.attachment.deleteMany();
-  await prisma.agentAction.deleteMany();
-  await prisma.auditLog.deleteMany();
-  await prisma.threadParticipant.deleteMany();
-  await prisma.message.deleteMany();
-  await prisma.messageThread.deleteMany();
-  await prisma.quoteItem.deleteMany();
-  await prisma.milestone.deleteMany();
-  await prisma.proposal.deleteMany();
-  await prisma.pocParticipant.deleteMany();
-  await prisma.pocProject.deleteMany();
-  await prisma.solution.deleteMany();
-  await prisma.demand.deleteMany();
-  await prisma.companyProfile.deleteMany();
-  await prisma.agentProduct.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.organizationMember.deleteMany();
-  await prisma.companyProfile.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.organization.deleteMany();
+  // ============================================
+  // 0. Truncate all tables (dependency order)
+  // ============================================
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE featured_items CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE reviews CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE attachments CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE agent_actions CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE audit_logs CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE thread_participants CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE messages CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE message_threads CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE quote_items CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE milestones CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE proposals CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE poc_participants CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE poc_projects CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE solutions CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE demands CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE company_profiles CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE agent_products CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE products CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE organization_members CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE users CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE organizations CASCADE');
 
   // ============================================
-  // 1. Create Organizations
+  // 1. Create Organizations (4+)
   // ============================================
-  const orgData = [
-    {
-      id: 'org_qiyuan',
-      name: '启元AI',
-      logo: undefined,
-      type: 'supplier' as const,
-      industry: 'industrial_software',
-      description: '企业知识库、Agent开发与本地化部署服务商。',
-      certified: true,
-      memberCount: 50,
-    },
-    {
-      id: 'org_xinghe',
-      name: '星河智能科技',
-      type: 'supplier' as const,
+  const orgZhizao = await prisma.organization.create({
+    data: {
+      id: 'org_zhizao',
+      name: '智造科技',
+      type: 'supplier',
       industry: 'manufacturing',
       description: '拥有知识库产品和制造业案例，支持 POC 与私有化交付。',
       certified: true,
       memberCount: 35,
     },
-    {
-      id: 'org_gongshi',
-      name: '工识智能',
-      type: 'supplier' as const,
-      industry: 'manufacturing',
-      description: '围绕制造质检、工艺审查、工业软件 AI 助手提供端到端方案。',
+  });
+
+  const orgShuzhi = await prisma.organization.create({
+    data: {
+      id: 'org_shuzhi',
+      name: '数智云行',
+      type: 'supplier',
+      industry: 'finance',
+      description: '文档审查与合规AI解决方案，面向金融与政企客户。',
       certified: true,
-      memberCount: 28,
+      memberCount: 40,
     },
-    {
-      id: 'org_yunmai',
-      name: '云脉AI',
-      type: 'supplier' as const,
-      industry: 'retail',
-      description: '智能销售线索和CRM自动化服务商。',
+  });
+
+  const orgWeilai = await prisma.organization.create({
+    data: {
+      id: 'org_weilai',
+      name: '未来智造研究院',
+      type: 'supplier',
+      industry: 'research',
+      description: '科研情报追踪与趋势分析，面向科研与教育行业。',
       certified: false,
       memberCount: 20,
     },
-    {
-      id: 'org_lanjing',
-      name: '蓝鲸智能',
-      type: 'supplier' as const,
-      industry: 'finance',
-      description: '文档审查与合规AI解决方案。',
-      certified: false,
-      memberCount: 25,
-    },
-    {
-      id: 'org_yanxi',
-      name: '言犀科技',
-      type: 'supplier' as const,
-      industry: 'retail',
-      description: '多渠道智能客服与工单系统。',
-      certified: false,
-      memberCount: 40,
-    },
-    {
-      id: 'org_ruiyan',
-      name: '睿研智能',
-      type: 'supplier' as const,
-      industry: 'research',
-      description: '科研情报追踪与趋势分析。',
-      certified: false,
-      memberCount: 15,
-    },
-    {
-      id: 'org_shulan',
-      name: '数澜AI',
-      type: 'supplier' as const,
-      industry: 'finance',
-      description: '自然语言数据分析与报表生成。',
-      certified: false,
-      memberCount: 22,
-    },
-    {
-      id: 'org_weiyao',
-      name: '微曜科技',
-      type: 'supplier' as const,
-      industry: 'education',
-      description: '办公流程自动化与会议助手。',
-      certified: false,
-      memberCount: 18,
-    },
-    {
-      id: 'org_maguan',
-      name: '码观智能',
-      type: 'supplier' as const,
-      industry: 'industrial_software',
-      description: '代码审查与研发流程AI。',
-      certified: false,
-      memberCount: 30,
-    },
-    // Buyer organizations
-    {
-      id: 'org_buyer1',
-      name: '某制造企业',
-      type: 'buyer' as const,
+  });
+
+  const orgXinda = await prisma.organization.create({
+    data: {
+      id: 'org_xinda',
+      name: '鑫达制造集团',
+      type: 'buyer',
       industry: 'manufacturing',
       description: '大型制造企业，需要数字化转型。',
       certified: false,
       memberCount: 500,
     },
-    {
-      id: 'org_buyer2',
-      name: '某科研院所',
-      type: 'buyer' as const,
-      industry: 'research',
-      description: '航空技术科研机构。',
+  });
+
+  // Additional supplier organizations (from constants.ts)
+  const orgYunmai = await prisma.organization.create({
+    data: {
+      id: 'org_yunmai',
+      name: '云脉AI',
+      type: 'supplier',
+      industry: 'retail',
+      description: '智能销售线索和CRM自动化服务商。',
       certified: false,
-      memberCount: 200,
+      memberCount: 20,
     },
-    {
-      id: 'org_buyer3',
-      name: '某教育集团',
-      type: 'buyer' as const,
-      industry: 'education',
-      description: '教育培训集团。',
+  });
+
+  const orgLanjing = await prisma.organization.create({
+    data: {
+      id: 'org_lanjing',
+      name: '蓝鲸智能',
+      type: 'supplier',
+      industry: 'finance',
+      description: '文档审查与合规AI解决方案。',
       certified: false,
-      memberCount: 300,
+      memberCount: 25,
     },
-    {
-      id: 'org_buyer4',
-      name: '某工业软件公司',
-      type: 'buyer' as const,
+  });
+
+  const orgYanxi = await prisma.organization.create({
+    data: {
+      id: 'org_yanxi',
+      name: '言犀科技',
+      type: 'supplier',
+      industry: 'retail',
+      description: '多渠道智能客服与工单系统。',
+      certified: false,
+      memberCount: 40,
+    },
+  });
+
+  const orgShulan = await prisma.organization.create({
+    data: {
+      id: 'org_shulan',
+      name: '数澜AI',
+      type: 'supplier',
+      industry: 'finance',
+      description: '自然语言数据分析与报表生成。',
+      certified: false,
+      memberCount: 22,
+    },
+  });
+
+  const orgMaguan = await prisma.organization.create({
+    data: {
+      id: 'org_maguan',
+      name: '码观智能',
+      type: 'supplier',
       industry: 'industrial_software',
-      description: '工业软件研发团队。',
+      description: '代码审查与研发流程AI。',
       certified: false,
-      memberCount: 80,
+      memberCount: 30,
     },
-    // OPC team
-    {
+  });
+
+  // OPC team
+  const orgOpc = await prisma.organization.create({
+    data: {
       id: 'org_opc',
       name: 'iWantU平台运营',
-      type: 'opc_team' as const,
+      type: 'opc_team',
       description: '平台运营团队。',
       certified: true,
       memberCount: 10,
     },
-  ];
+  });
 
-  const organizations = await Promise.all(
-    orgData.map((org) => prisma.organization.create({ data: org }))
-  );
-  console.log(`Created ${organizations.length} organizations`);
+  console.log('Created organizations');
 
   // ============================================
-  // 2. Create Users
+  // 2. Create Users (6+)
   // ============================================
-  const userData = [
-    {
+  const adminPw = hashSync('admin123', 10);
+  const demoPw = hashSync('demo123', 10);
+
+  const userAdmin = await prisma.user.create({
+    data: {
       id: 'user_admin',
       name: '平台管理员',
       email: 'admin@iwantu.com',
-      role: 'admin' as const,
+      passwordHash: adminPw,
+      role: 'admin',
       orgId: 'org_opc',
     },
-    {
-      id: 'user_operator',
-      name: '运营专员',
-      email: 'operator@iwantu.com',
-      role: 'operator' as const,
-      orgId: 'org_opc',
-    },
-    {
-      id: 'user_buyer1',
+  });
+
+  const userBuyer = await prisma.user.create({
+    data: {
+      id: 'user_buyer',
       name: '张明',
-      email: 'zhangming@manufacturer.com',
-      role: 'buyer' as const,
-      orgId: 'org_buyer1',
+      email: 'buyer@demo.com',
+      passwordHash: demoPw,
+      role: 'buyer',
+      orgId: 'org_xinda',
       phone: '13800000001',
     },
-    {
-      id: 'user_buyer2',
-      name: '李芳',
-      email: 'lifang@research.org',
-      role: 'buyer' as const,
-      orgId: 'org_buyer2',
-      phone: '13800000002',
-    },
-    {
-      id: 'user_buyer3',
-      name: '王磊',
-      email: 'wanglei@education.com',
-      role: 'buyer' as const,
-      orgId: 'org_buyer3',
-      phone: '13800000003',
-    },
-    {
-      id: 'user_buyer4',
-      name: '赵强',
-      email: 'zhaoqiang@indsw.com',
-      role: 'buyer' as const,
-      orgId: 'org_buyer4',
-      phone: '13800000004',
-    },
-    {
+  });
+
+  const userSupplier1 = await prisma.user.create({
+    data: {
       id: 'user_supplier1',
       name: '陈工',
-      email: 'chengong@qiyuan.ai',
-      role: 'supplier' as const,
-      orgId: 'org_qiyuan',
+      email: 'supplier1@demo.com',
+      passwordHash: demoPw,
+      role: 'supplier',
+      orgId: 'org_zhizao',
       phone: '13900000001',
     },
-    {
+  });
+
+  const userSupplier2 = await prisma.user.create({
+    data: {
       id: 'user_supplier2',
       name: '刘总',
-      email: 'liuzong@xinghe.ai',
-      role: 'supplier' as const,
-      orgId: 'org_xinghe',
+      email: 'supplier2@demo.com',
+      passwordHash: demoPw,
+      role: 'supplier',
+      orgId: 'org_shuzhi',
       phone: '13900000002',
     },
-    {
-      id: 'user_supplier3',
-      name: '黄工',
-      email: 'huanggong@gongshi.ai',
-      role: 'supplier' as const,
-      orgId: 'org_gongshi',
+  });
+
+  const userOpc = await prisma.user.create({
+    data: {
+      id: 'user_opc',
+      name: '运营专员',
+      email: 'opc@demo.com',
+      passwordHash: demoPw,
+      role: 'opc_team',
+      orgId: 'org_opc',
+      phone: '13700000001',
+    },
+  });
+
+  const userResearcher = await prisma.user.create({
+    data: {
+      id: 'user_researcher',
+      name: '赵博士',
+      email: 'researcher@demo.com',
+      passwordHash: demoPw,
+      role: 'supplier',
+      orgId: 'org_weilai',
       phone: '13900000003',
     },
-  ];
+  });
 
-  const users = await Promise.all(
-    userData.map((user) => prisma.user.create({ data: user }))
-  );
-  console.log(`Created ${users.length} users`);
+  console.log('Created users');
 
   // ============================================
   // 3. Create Organization Members
   // ============================================
-  const memberData = users
-    .filter((u) => u.orgId)
-    .map((u) => ({
-      userId: u.id,
-      orgId: u.orgId!,
-      role: u.role === 'admin' ? 'admin' : u.role === 'operator' ? 'operator' : 'member',
-    }));
-
-  await Promise.all(
-    memberData.map((m) => prisma.organizationMember.create({ data: m }))
-  );
-  console.log(`Created ${memberData.length} organization members`);
-
-  // ============================================
-  // 4. Create Products (from PRODUCTS constant)
-  // ============================================
-  // Map product companies to org IDs
-  const companyToOrgId: Record<string, string> = {
-    '星河智能科技': 'org_xinghe',
-    '云脉AI': 'org_yunmai',
-    '蓝鲸智能': 'org_lanjing',
-    '言犀科技': 'org_yanxi',
-    '工识智能': 'org_gongshi',
-    '睿研智能': 'org_ruiyan',
-    '数澜AI': 'org_shulan',
-    '微曜科技': 'org_weiyao',
-    '码观智能': 'org_maguan',
+  const allUsers = [userAdmin, userBuyer, userSupplier1, userSupplier2, userOpc, userResearcher];
+  const memberRoleMap: Record<string, string> = {
+    admin: 'admin',
+    operator: 'operator',
+    opc_team: 'operator',
   };
-
-  const productRecords = await Promise.all(
-    PRODUCTS.map((p) =>
-      prisma.product.create({
+  for (const u of allUsers) {
+    if (u.orgId) {
+      await prisma.organizationMember.create({
         data: {
-          id: p.id,
-          orgId: companyToOrgId[p.company] || 'org_qiyuan',
-          name: p.name,
-          summary: p.summary,
-          description: p.description || '',
-          coverImage: p.coverImage,
-          category: p.category,
-          industryTags: p.industryTags,
-          capabilityTags: p.capabilityTags,
-          deploymentModes: p.deploymentModes,
-          pricingModel: p.pricingModel,
-          price: p.price,
-          supportPoc: p.supportPoc,
-          supportPrivateDeployment: p.supportPrivateDeployment,
-          score: p.score,
-          rating: p.rating,
-          caseCount: p.caseCount,
-          pocCount: p.pocCount,
-          status: p.status,
-          accent: p.accent,
-          shot: p.shot,
-          tags: p.tags,
-          createdAt: new Date(p.createdAt),
-        },
-      })
-    )
-  );
-  console.log(`Created ${productRecords.length} products`);
-
-  // ============================================
-  // 5. Create Company Profiles (from COMPANIES constant)
-  // ============================================
-  const companyToOrgProfileId: Record<string, string> = {
-    '启元AI': 'org_qiyuan',
-    '星河智能科技': 'org_xinghe',
-    '工识智能': 'org_gongshi',
-  };
-
-  const companyProfiles = await Promise.all(
-    COMPANIES.map((c) =>
-      prisma.companyProfile.create({
-        data: {
-          id: c.id,
-          orgId: companyToOrgProfileId[c.name] || 'org_qiyuan',
-          slogan: c.slogan,
-          description: c.description,
-          certifications: c.certifications,
-          capabilities: c.capabilities,
-          industryExperience: c.industryExperience,
-          deliveryScope: c.deliveryScope,
-          caseStudies: c.caseStudies,
-          rating: c.rating,
-          responseRate: c.responseRate,
-          certified: c.certified,
-          tags: c.tags,
-        },
-      })
-    )
-  );
-  console.log(`Created ${companyProfiles.length} company profiles`);
-
-  // ============================================
-  // 6. Create Demands (from DEMANDS constant)
-  // ============================================
-  const demandOwnerMap: Record<string, { userId: string; orgId: string }> = {
-    d1: { userId: 'user_buyer1', orgId: 'org_buyer1' },
-    d2: { userId: 'user_buyer2', orgId: 'org_buyer2' },
-    d3: { userId: 'user_buyer3', orgId: 'org_buyer3' },
-    d4: { userId: 'user_buyer4', orgId: 'org_buyer4' },
-  };
-
-  const demandRecords = await Promise.all(
-    DEMANDS.map((d) => {
-      const owner = demandOwnerMap[d.id] || { userId: 'user_buyer1', orgId: 'org_buyer1' };
-      return prisma.demand.create({
-        data: {
-          id: d.id,
-          ownerUserId: owner.userId,
-          ownerOrgId: owner.orgId,
-          title: d.title,
-          industry: d.industry,
-          budgetMin: d.budgetMin,
-          budgetMax: d.budgetMax,
-          budgetRange: d.budgetRange,
-          deliveryPeriod: d.deliveryPeriod,
-          dataTypes: d.dataTypes,
-          deploymentRequirement: d.deploymentRequirement,
-          description: d.description || '',
-          painPoints: d.painPoints || '',
-          existingSystems: d.existingSystems || '',
-          supportPoc: d.supportPoc,
-          allowAiSupplier: d.allowAiSupplier,
-          status: d.status,
-          createdAt: new Date(d.createdAt),
+          userId: u.id,
+          orgId: u.orgId,
+          role: memberRoleMap[u.role] || 'member',
         },
       });
-    })
-  );
-  console.log(`Created ${demandRecords.length} demands`);
+    }
+  }
+  console.log('Created organization members');
 
   // ============================================
-  // 7. Create Solutions (from SOLUTIONS constant)
+  // 4. Create Products (4+)
   // ============================================
-  const solutionOrgMap: Record<string, string> = {
-    s1: 'org_qiyuan',
-    s2: 'org_ruiyan',
-    s3: 'org_yanxi',
-    s4: 'org_maguan',
-  };
-
-  const solutionRecords = await Promise.all(
-    SOLUTIONS.map((s) =>
-      prisma.solution.create({
-        data: {
-          id: s.id,
-          orgId: solutionOrgMap[s.id] || 'org_qiyuan',
-          title: s.title,
-          summary: s.summary,
-          description: s.description || '',
-          industry: s.industry,
-          scenario: s.scenario,
-          budgetRange: s.budgetRange,
-          deploymentModes: s.deploymentModes,
-          deliveryPeriod: s.deliveryPeriod,
-          supportPoc: s.supportPoc,
-          components: s.components,
-          recommendedProductIds: s.recommendedProducts,
-          recommendedCompanyIds: s.recommendedCompanies,
-        },
-      })
-    )
-  );
-  console.log(`Created ${solutionRecords.length} solutions`);
-
-  // ============================================
-  // 8. Create Sample POC Project
-  // ============================================
-  const pocProject = await prisma.pocProject.create({
+  // Product data aligned with constants.ts PRODUCTS
+  await prisma.product.create({
     data: {
-      id: 'poc1',
-      demandId: 'd1',
-      productId: 'p1',
-      supplierOrgId: 'org_xinghe',
-      status: 'confirming_requirements',
-      testMetrics: ['准确率', '响应时间', '覆盖率'],
-      acceptanceCriteria: ['准确率 > 90%', '响应时间 < 3s', '覆盖率 > 80%'],
-      sampleDataStatus: 'pending',
-      startDate: new Date('2025-06-15'),
-      participants: {
-        create: [
-          { id: 'poc_p1', userId: 'user_buyer1', role: 'buyer', orgId: 'org_buyer1' },
-          { id: 'poc_p2', userId: 'user_supplier2', role: 'supplier', orgId: 'org_xinghe' },
-        ],
-      },
+      id: 'p1',
+      orgId: 'org_zhizao',
+      name: '智问企业知识库',
+      summary: '面向企业内部文档的私有化知识库问答系统，支持权限控制与答案溯源。',
+      description: '',
+      category: 'AI Knowledge Base',
+      industryTags: ['manufacturing', 'government', 'research', 'education'],
+      capabilityTags: ['RAG', '私有化', '溯源'],
+      deploymentModes: ['saas', 'private_cloud', 'on_premise'],
+      pricingModel: 'per_project',
+      price: '按项目报价',
+      supportPoc: true,
+      supportPrivateDeployment: true,
+      score: '4.8分',
+      rating: 4.8,
+      caseCount: 36,
+      pocCount: 12,
+      status: 'published',
+      accent: 'blue',
+      shot: 'knowledge',
+      tags: ['RAG', '私有化', '溯源'],
+      createdAt: new Date('2025-01-15'),
     },
   });
-  console.log('Created sample POC project');
 
-  // ============================================
-  // 9. Create Sample Proposal
-  // ============================================
-  const proposal = await prisma.proposal.create({
+  await prisma.product.create({
     data: {
-      id: 'prop1',
-      demandId: 'd1',
-      supplierOrgId: 'user_supplier2',
-      title: '知识库问答系统实施方案',
-      scope: '私有化部署知识库问答系统，包含文档解析、权限管理、答案溯源等模块。',
-      price: 250000,
-      currency: 'CNY',
-      deliveryPeriod: '4周',
-      status: 'submitted',
-      milestones: {
-        create: [
-          {
-            id: 'ms1',
-            name: '需求确认与环境准备',
-            description: '确认需求细节，搭建私有化部署环境。',
-            duration: '1周',
-            deliverables: ['需求文档', '环境配置报告'],
-          },
-          {
-            id: 'ms2',
-            name: '系统开发与集成',
-            description: '完成文档解析、问答引擎、权限管理等核心模块开发。',
-            duration: '2周',
-            deliverables: ['系统原型', '接口文档', '测试用例'],
-          },
-          {
-            id: 'ms3',
-            name: '测试验收与交付',
-            description: '进行系统测试、用户验收培训及正式上线。',
-            duration: '1周',
-            deliverables: ['测试报告', '用户手册', '运维文档'],
-          },
-        ],
-      },
-      quoteItems: {
-        create: [
-          {
-            id: 'qi1',
-            name: '知识库引擎许可',
-            description: '私有化部署的知识库引擎软件许可。',
-            quantity: 1,
-            unit: '套',
-            unitPrice: 120000,
-            totalPrice: 120000,
-          },
-          {
-            id: 'qi2',
-            name: '定制开发服务',
-            description: '权限管理、答案溯源等定制开发。',
-            quantity: 1,
-            unit: '项',
-            unitPrice: 80000,
-            totalPrice: 80000,
-          },
-          {
-            id: 'qi3',
-            name: '部署与培训',
-            description: '私有化部署实施及用户培训。',
-            quantity: 1,
-            unit: '项',
-            unitPrice: 50000,
-            totalPrice: 50000,
-          },
-        ],
-      },
+      id: 'p2',
+      orgId: 'org_yunmai',
+      name: '销售线索Agent',
+      summary: '自动搜索市场线索、生成客户画像、跟进建议和邮件草稿。',
+      description: '',
+      category: 'AI Agent',
+      industryTags: ['retail', 'finance'],
+      capabilityTags: ['Agent', 'CRM', '自动化'],
+      deploymentModes: ['saas'],
+      pricingModel: 'subscription',
+      price: '订阅+服务',
+      supportPoc: false,
+      supportPrivateDeployment: false,
+      score: '4.7分',
+      rating: 4.7,
+      caseCount: 24,
+      pocCount: 6,
+      status: 'published',
+      accent: 'violet',
+      shot: 'sales',
+      tags: ['Agent', 'CRM', '自动化'],
+      createdAt: new Date('2025-02-01'),
     },
   });
-  console.log('Created sample proposal');
+
+  await prisma.product.create({
+    data: {
+      id: 'p3',
+      orgId: 'org_lanjing',
+      name: '文档审查助手',
+      summary: '支持合同、制度、投标文件的风险识别、条款提取和修订建议。',
+      description: '',
+      category: 'Document AI',
+      industryTags: ['government', 'finance', 'manufacturing'],
+      capabilityTags: ['文档AI', '合规', '审查'],
+      deploymentModes: ['private_cloud'],
+      pricingModel: 'subscription',
+      price: '年费制',
+      supportPoc: true,
+      supportPrivateDeployment: true,
+      score: '4.6分',
+      rating: 4.6,
+      caseCount: 18,
+      pocCount: 8,
+      status: 'published',
+      accent: 'cyan',
+      shot: 'review',
+      tags: ['文档AI', '合规', '审查'],
+      createdAt: new Date('2025-02-10'),
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      id: 'p4',
+      orgId: 'org_yanxi',
+      name: '客服智能体',
+      summary: '面向售前售后场景的多渠道智能客服，支持知识库和工单联动。',
+      description: '',
+      category: 'Customer Service',
+      industryTags: ['retail', 'education'],
+      capabilityTags: ['客服', '多渠道', '工单'],
+      deploymentModes: ['saas'],
+      pricingModel: 'per_seat',
+      price: '按席位',
+      supportPoc: true,
+      supportPrivateDeployment: false,
+      score: '4.7分',
+      rating: 4.7,
+      caseCount: 42,
+      pocCount: 15,
+      status: 'published',
+      accent: 'green',
+      shot: 'support',
+      tags: ['客服', '多渠道', '工单'],
+      createdAt: new Date('2025-03-01'),
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      id: 'p5',
+      orgId: 'org_zhizao',
+      name: '工业视觉检测AI',
+      summary: '缺陷检测、产线质检与异常告警，支持边缘部署和模型迭代。',
+      description: '',
+      category: 'Industrial AI',
+      industryTags: ['manufacturing'],
+      capabilityTags: ['工业AI', '视觉', '边缘'],
+      deploymentModes: ['on_premise'],
+      pricingModel: 'per_project',
+      price: '项目制',
+      supportPoc: true,
+      supportPrivateDeployment: true,
+      score: '4.5分',
+      rating: 4.5,
+      caseCount: 14,
+      pocCount: 9,
+      status: 'published',
+      accent: 'orange',
+      shot: 'vision',
+      tags: ['工业AI', '视觉', '边缘'],
+      createdAt: new Date('2025-03-15'),
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      id: 'p6',
+      orgId: 'org_weilai',
+      name: '科研情报Agent',
+      summary: '自动追踪论文、专利、政策和产业动态，生成趋势分析报告。',
+      description: '',
+      category: 'Research AI',
+      industryTags: ['research'],
+      capabilityTags: ['科研', '情报', '报告'],
+      deploymentModes: ['saas'],
+      pricingModel: 'subscription',
+      price: '订阅制',
+      supportPoc: false,
+      supportPrivateDeployment: false,
+      score: '4.6分',
+      rating: 4.6,
+      caseCount: 20,
+      pocCount: 4,
+      status: 'published',
+      accent: 'slate',
+      shot: 'research',
+      tags: ['科研', '情报', '报告'],
+      createdAt: new Date('2025-04-01'),
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      id: 'p7',
+      orgId: 'org_shulan',
+      name: '数据分析Copilot',
+      summary: '用自然语言分析业务数据，自动生成图表、洞察和管理报告。',
+      description: '',
+      category: 'BI AI',
+      industryTags: ['finance', 'retail'],
+      capabilityTags: ['BI', 'Copilot', '报表'],
+      deploymentModes: ['private_cloud'],
+      pricingModel: 'per_project',
+      price: '按项目',
+      supportPoc: true,
+      supportPrivateDeployment: true,
+      score: '4.5分',
+      rating: 4.5,
+      caseCount: 16,
+      pocCount: 7,
+      status: 'published',
+      accent: 'blue',
+      shot: 'data',
+      tags: ['BI', 'Copilot', '报表'],
+      createdAt: new Date('2025-04-10'),
+    },
+  });
+
+  await prisma.product.create({
+    data: {
+      id: 'p9',
+      orgId: 'org_maguan',
+      name: '代码审查Agent',
+      summary: '结合仓库规范和研发流程，自动审查代码、需求文档和测试用例。',
+      description: '',
+      category: 'Dev AI',
+      industryTags: ['industrial_software'],
+      capabilityTags: ['研发', 'Agent', '审查'],
+      deploymentModes: ['on_premise'],
+      pricingModel: 'subscription',
+      price: '年费制',
+      supportPoc: true,
+      supportPrivateDeployment: true,
+      score: '4.6分',
+      rating: 4.6,
+      caseCount: 22,
+      pocCount: 10,
+      status: 'published',
+      accent: 'green',
+      shot: 'code',
+      tags: ['研发', 'Agent', '审查'],
+      createdAt: new Date('2025-05-15'),
+    },
+  });
+
+  console.log('Created products');
 
   // ============================================
-  // 10. Create Sample Message Thread
+  // 5. Create AgentProducts (2+)
   // ============================================
-  const thread = await prisma.messageThread.create({
+  await prisma.agentProduct.create({
+    data: {
+      id: 'ap1',
+      orgId: 'org_zhizao',
+      name: '销售线索Agent',
+      summary: '自动搜索市场线索、生成客户画像、跟进建议和邮件草稿。',
+      description: '基于大模型的智能销售助手，自动爬取公开商业信息，生成潜在客户画像与跟进策略。',
+      taskGoal: '自动发现潜在客户并生成跟进建议',
+      inputSpec: ['公司名称', '行业', '地区'],
+      outputSpec: ['客户画像报告', '跟进建议', '邮件草稿'],
+      toolCalls: ['web_search', 'crm_read', 'crm_write', 'email_send'],
+      successRate: 0.87,
+      deploymentModes: ['saas'],
+      pricingModel: 'subscription',
+      price: '订阅制',
+      supportPoc: false,
+      riskLevel: 'medium',
+      status: 'published',
+      tags: ['Agent', 'CRM', '自动化'],
+      deploy: 'SaaS/API',
+      accent: 'violet',
+      shot: 'sales',
+    },
+  });
+
+  await prisma.agentProduct.create({
+    data: {
+      id: 'ap2',
+      orgId: 'org_shuzhi',
+      name: '文档审查Agent',
+      summary: '支持合同、制度、投标文件的风险识别、条款提取和修订建议。',
+      description: '基于NLP和知识图谱的智能文档审查Agent，自动识别合同风险条款并给出修订建议。',
+      taskGoal: '识别文档风险条款并给出修订建议',
+      inputSpec: ['文档文件（Word/PDF）'],
+      outputSpec: ['风险标注', '条款摘要', '修订建议'],
+      toolCalls: ['file_parse', 'nlp_analyze', 'knowledge_graph_query'],
+      successRate: 0.92,
+      deploymentModes: ['private_cloud'],
+      pricingModel: 'per_project',
+      price: '按项目',
+      supportPoc: true,
+      riskLevel: 'low',
+      status: 'published',
+      tags: ['文档AI', '合规', '审查'],
+      deploy: '私有云',
+      accent: 'cyan',
+      shot: 'review',
+    },
+  });
+
+  console.log('Created agent products');
+
+  // ============================================
+  // 6. Create Demands (3+, different statuses)
+  // ============================================
+  await prisma.demand.create({
+    data: {
+      id: 'd1',
+      ownerUserId: 'user_buyer',
+      ownerOrgId: 'org_xinda',
+      title: '某制造企业需要建设内部制度知识库问答系统',
+      industry: '制造业',
+      budgetMin: 100000,
+      budgetMax: 300000,
+      budgetRange: '10-30万',
+      deliveryPeriod: '1个月内',
+      dataTypes: ['Word', 'PDF', 'Excel'],
+      deploymentRequirement: '私有云',
+      description: '需要建设企业内部制度知识库问答系统，覆盖生产、安全、质量管理制度，支持员工自然语言查询，答案可溯源。',
+      painPoints: '制度文档分散，查找效率低，员工频繁询问制度细节。',
+      existingSystems: 'OA系统、文件服务器',
+      supportPoc: true,
+      allowAiSupplier: true,
+      allowAiAutoBid: false,
+      status: 'awaiting_quote',
+      matchScore: '92%',
+      matchScoreNum: 0.92,
+      createdAt: new Date('2025-06-01'),
+    },
+  });
+
+  await prisma.demand.create({
+    data: {
+      id: 'd2',
+      ownerUserId: 'user_researcher',
+      ownerOrgId: 'org_weilai',
+      title: '科研院所需要自动生成航空技术趋势分析报告',
+      industry: '科研机构',
+      budgetMin: 300000,
+      budgetMax: 800000,
+      budgetRange: '30-80万',
+      deliveryPeriod: '1个月内',
+      dataTypes: ['PDF', '网页', '数据库'],
+      deploymentRequirement: 'SaaS',
+      description: '需要自动追踪航空领域论文、专利和技术动态，定期生成趋势分析报告。',
+      painPoints: '文献追踪人工成本高，报告编写耗时。',
+      existingSystems: '文献数据库',
+      supportPoc: true,
+      allowAiSupplier: true,
+      allowAiAutoBid: true,
+      status: 'collecting_proposals',
+      matchScore: '88%',
+      matchScoreNum: 0.88,
+      createdAt: new Date('2025-06-02'),
+    },
+  });
+
+  await prisma.demand.create({
+    data: {
+      id: 'd3',
+      ownerUserId: 'user_buyer',
+      ownerOrgId: 'org_xinda',
+      title: '制造企业需要工业视觉质检AI解决方案',
+      industry: '制造业',
+      budgetMin: 200000,
+      budgetMax: 500000,
+      budgetRange: '20-50万',
+      deliveryPeriod: '3个月内',
+      dataTypes: ['图片', '视频流'],
+      deploymentRequirement: '本地化',
+      description: '需要基于AI视觉的产线质检方案，覆盖缺陷检测、异常告警，支持边缘部署。',
+      painPoints: '人工质检效率低，漏检率高。',
+      existingSystems: '传统机器视觉系统',
+      supportPoc: true,
+      allowAiSupplier: true,
+      allowAiAutoBid: false,
+      status: 'clarifying',
+      matchScore: '95%',
+      matchScoreNum: 0.95,
+      createdAt: new Date('2025-06-04'),
+    },
+  });
+
+  await prisma.demand.create({
+    data: {
+      id: 'd4',
+      ownerUserId: 'user_buyer',
+      ownerOrgId: 'org_xinda',
+      title: '制造企业需要代码审查与需求文档生成Agent',
+      industry: '工业软件',
+      budgetMin: 200000,
+      budgetMax: 500000,
+      budgetRange: '20-50万',
+      deliveryPeriod: '3个月内',
+      dataTypes: ['代码仓库', '文档'],
+      deploymentRequirement: '私有化',
+      description: '工业软件研发团队需要代码审查和需求文档生成Agent，覆盖需求澄清、代码审查、测试生成。',
+      painPoints: '研发效率低，代码质量参差不齐。',
+      existingSystems: 'Git仓库、Jira',
+      supportPoc: true,
+      allowAiSupplier: true,
+      allowAiAutoBid: true,
+      status: 'closed_deal',
+      matchScore: '95%',
+      matchScoreNum: 0.95,
+      createdAt: new Date('2025-06-05'),
+    },
+  });
+
+  console.log('Created demands');
+
+  // ============================================
+  // 7. Create Solutions (2+)
+  // ============================================
+  await prisma.solution.create({
+    data: {
+      id: 's1',
+      orgId: 'org_zhizao',
+      title: '制造业知识库与工艺问答方案',
+      summary: '把制度、工艺、维修手册转为可信问答与溯源系统。',
+      description: '面向制造业企业的知识库与工艺问答解决方案，将制度文件、工艺规程、维修手册等转化为可查询、可溯源的智能问答系统。',
+      industry: ['manufacturing'],
+      scenario: '制造业知识管理',
+      budgetRange: '10-50万',
+      deploymentModes: ['private_cloud', 'on_premise'],
+      deliveryPeriod: '4-8周',
+      supportPoc: true,
+      components: ['知识库引擎', '文档解析', '问答界面', '权限管理'],
+      recommendedProductIds: ['p1'],
+      recommendedCompanyIds: ['org_zhizao'],
+    },
+  });
+
+  await prisma.solution.create({
+    data: {
+      id: 's2',
+      orgId: 'org_shuzhi',
+      title: '金融投研情报自动化方案',
+      summary: '汇聚研报、公告和新闻，生成可追踪的投资研究摘要。',
+      description: '面向金融行业的投研情报自动化方案，汇聚研报、公告和新闻，自动生成投资研究摘要与趋势分析。',
+      industry: ['finance'],
+      scenario: '金融投研',
+      budgetRange: '30-100万',
+      deploymentModes: ['private_cloud'],
+      deliveryPeriod: '6-12周',
+      supportPoc: true,
+      components: ['情报采集', 'NLP分析', '报告生成', '知识图谱'],
+      recommendedProductIds: ['p3', 'p6'],
+      recommendedCompanyIds: ['org_shuzhi'],
+    },
+  });
+
+  await prisma.solution.create({
+    data: {
+      id: 's3',
+      orgId: 'org_yanxi',
+      title: '政企热线智能客服方案',
+      summary: '建设多渠道客服知识库、工单联动和质检分析闭环。',
+      description: '',
+      industry: ['government'],
+      scenario: '政企客服',
+      budgetRange: '20-60万',
+      deploymentModes: ['saas', 'private_cloud'],
+      deliveryPeriod: '4-8周',
+      supportPoc: true,
+      components: ['客服机器人', '工单系统', '质检分析', '知识库'],
+      recommendedProductIds: ['p4'],
+      recommendedCompanyIds: ['org_yanxi'],
+    },
+  });
+
+  await prisma.solution.create({
+    data: {
+      id: 's4',
+      orgId: 'org_maguan',
+      title: '软件研发 Agent 协作方案',
+      summary: '覆盖需求澄清、代码审查、测试生成和交付文档。',
+      description: '',
+      industry: ['industrial_software'],
+      scenario: '研发效率',
+      budgetRange: '20-50万',
+      deploymentModes: ['on_premise'],
+      deliveryPeriod: '6-10周',
+      supportPoc: true,
+      components: ['代码审查Agent', '需求分析Agent', '测试生成', '文档助手'],
+      recommendedProductIds: ['p9'],
+      recommendedCompanyIds: ['org_maguan'],
+    },
+  });
+
+  console.log('Created solutions');
+
+  // ============================================
+  // 8. Create CompanyProfiles (for supplier orgs)
+  // ============================================
+  await prisma.companyProfile.create({
+    data: {
+      id: 'cp1',
+      orgId: 'org_zhizao',
+      slogan: '拥有知识库产品和制造业案例，支持 POC 与私有化交付。',
+      description: '星河智能科技旗下的智造科技品牌，拥有知识库产品和制造业案例，支持 POC 与私有化交付。',
+      certifications: ['平台认证'],
+      capabilities: ['RAG', '制造业', '私有云', '工业AI'],
+      industryExperience: ['manufacturing', 'research'],
+      deliveryScope: ['私有化RAG问答', '权限控制', '答案溯源', 'OA集成', '缺陷检测'],
+      caseStudies: ['某制造业制度问答系统', '某科研机构知识库', '某汽车产线视觉检测'],
+      rating: 4.8,
+      responseRate: 95,
+      certified: true,
+      tags: ['RAG', '制造业', '私有云'],
+    },
+  });
+
+  await prisma.companyProfile.create({
+    data: {
+      id: 'cp2',
+      orgId: 'org_shuzhi',
+      slogan: '文档审查与合规AI解决方案，面向金融与政企客户。',
+      description: '数智云行专注于文档审查与合规AI解决方案，服务金融、政务等行业客户。',
+      certifications: ['平台认证', 'ISO27001'],
+      capabilities: ['文档AI', '合规', '审查', '知识图谱'],
+      industryExperience: ['finance', 'government'],
+      deliveryScope: ['合同审查', '制度合规检查', '投标文件分析', '风险识别'],
+      caseStudies: ['某银行合同审查系统', '某政府机关制度合规检查'],
+      rating: 4.7,
+      responseRate: 92,
+      certified: true,
+      tags: ['文档AI', '合规', '审查'],
+    },
+  });
+
+  await prisma.companyProfile.create({
+    data: {
+      id: 'cp3',
+      orgId: 'org_weilai',
+      slogan: '科研情报追踪与趋势分析。',
+      description: '未来智造研究院专注于科研情报追踪与趋势分析，服务科研与教育行业。',
+      certifications: ['平台认证'],
+      capabilities: ['科研', '情报', '报告', 'NLP分析'],
+      industryExperience: ['research', 'education'],
+      deliveryScope: ['论文追踪', '专利分析', '趋势报告', '竞品情报'],
+      caseStudies: ['某航空研究所情报系统', '某高校科研管理助手'],
+      rating: 4.6,
+      responseRate: 88,
+      certified: false,
+      tags: ['科研', '情报', '报告'],
+    },
+  });
+
+  console.log('Created company profiles');
+
+  // ============================================
+  // 9. Create FeaturedItems
+  // ============================================
+  await prisma.featuredItem.create({
+    data: {
+      id: 'feat1',
+      itemType: 'product',
+      itemId: 'p1',
+      title: '智问企业知识库',
+      description: '面向企业内部文档的私有化知识库问答系统',
+      position: 1,
+      active: true,
+    },
+  });
+
+  await prisma.featuredItem.create({
+    data: {
+      id: 'feat2',
+      itemType: 'product',
+      itemId: 'p4',
+      title: '客服智能体',
+      description: '多渠道智能客服，支持知识库和工单联动',
+      position: 2,
+      active: true,
+    },
+  });
+
+  await prisma.featuredItem.create({
+    data: {
+      id: 'feat3',
+      itemType: 'company',
+      itemId: 'cp1',
+      title: '智造科技',
+      description: '拥有知识库产品和制造业案例，支持 POC 与私有化交付',
+      position: 3,
+      active: true,
+    },
+  });
+
+  await prisma.featuredItem.create({
+    data: {
+      id: 'feat4',
+      itemType: 'solution',
+      itemId: 's1',
+      title: '制造业知识库与工艺问答方案',
+      description: '把制度、工艺、维修手册转为可信问答与溯源系统',
+      position: 4,
+      active: true,
+    },
+  });
+
+  await prisma.featuredItem.create({
+    data: {
+      id: 'feat5',
+      itemType: 'agent',
+      itemId: 'ap1',
+      title: '销售线索Agent',
+      description: '自动搜索市场线索、生成客户画像、跟进建议和邮件草稿',
+      position: 5,
+      active: true,
+    },
+  });
+
+  console.log('Created featured items');
+
+  // ============================================
+  // 10. Create MessageThread + Messages
+  // ============================================
+  await prisma.messageThread.create({
     data: {
       id: 'thread1',
       title: '关于知识库问答系统的需求沟通',
@@ -542,21 +864,21 @@ async function main() {
         create: [
           {
             id: 'msg1',
-            senderId: 'user_buyer1',
+            senderId: 'user_buyer',
             senderName: '张明',
             content: '你好，我们对知识库问答系统很感兴趣，想了解更多细节。',
             timestamp: new Date('2025-06-01T09:00:00Z'),
           },
           {
             id: 'msg2',
-            senderId: 'user_supplier2',
-            senderName: '刘总',
+            senderId: 'user_supplier1',
+            senderName: '陈工',
             content: '您好！我们的系统支持私有化部署，可以满足制造业的知识管理需求。',
             timestamp: new Date('2025-06-01T10:15:00Z'),
           },
           {
             id: 'msg3',
-            senderId: 'user_buyer1',
+            senderId: 'user_buyer',
             senderName: '张明',
             content: '我们希望支持Word、PDF、Excel等多种文档格式。',
             timestamp: new Date('2025-06-05T10:30:00Z'),
@@ -565,112 +887,14 @@ async function main() {
       },
       participants: {
         create: [
-          { id: 'tp1', userId: 'user_buyer1' },
-          { id: 'tp2', userId: 'user_supplier2' },
+          { id: 'tp1', userId: 'user_buyer' },
+          { id: 'tp2', userId: 'user_supplier1' },
         ],
       },
     },
   });
-  console.log('Created sample message thread');
 
-  // ============================================
-  // 11. Create Featured Items
-  // ============================================
-  const featuredItems = await Promise.all([
-    prisma.featuredItem.create({
-      data: {
-        id: 'feat1',
-        itemType: 'product',
-        itemId: 'p1',
-        title: '智问企业知识库',
-        description: '面向企业内部文档的私有化知识库问答系统',
-        position: 1,
-        active: true,
-      },
-    }),
-    prisma.featuredItem.create({
-      data: {
-        id: 'feat2',
-        itemType: 'product',
-        itemId: 'p4',
-        title: '客服智能体',
-        description: '多渠道智能客服，支持知识库和工单联动',
-        position: 2,
-        active: true,
-      },
-    }),
-    prisma.featuredItem.create({
-      data: {
-        id: 'feat3',
-        itemType: 'company',
-        itemId: 'c1',
-        title: '启元AI',
-        description: '企业知识库、Agent开发与本地化部署服务商',
-        position: 3,
-        active: true,
-      },
-    }),
-    prisma.featuredItem.create({
-      data: {
-        id: 'feat4',
-        itemType: 'solution',
-        itemId: 's1',
-        title: '制造业知识库与工艺问答方案',
-        description: '把制度、工艺、维修手册转为可信问答与溯源系统',
-        position: 4,
-        active: true,
-      },
-    }),
-    prisma.featuredItem.create({
-      data: {
-        id: 'feat5',
-        itemType: 'team',
-        itemId: 'd1',
-        title: '某制造企业需要建设内部制度知识库问答系统',
-        description: '预算10-30万，支持POC验证',
-        position: 5,
-        active: true,
-      },
-    }),
-  ]);
-  console.log(`Created ${featuredItems.length} featured items`);
-
-  // ============================================
-  // 12. Create Sample Reviews
-  // ============================================
-  const reviews = await Promise.all([
-    prisma.review.create({
-      data: {
-        id: 'rev1',
-        targetType: 'product',
-        targetId: 'p1',
-        userId: 'user_buyer1',
-        rating: 4.8,
-        content: '知识库问答准确率很高，支持溯源功能非常实用。私有化部署方案也很完善。',
-      },
-    }),
-    prisma.review.create({
-      data: {
-        id: 'rev2',
-        targetType: 'product',
-        targetId: 'p4',
-        userId: 'user_buyer3',
-        rating: 4.6,
-        content: '客服智能体多渠道支持很好，工单联动功能提升了客服效率。',
-      },
-    }),
-    prisma.review.create({
-      data: {
-        id: 'rev3',
-        targetType: 'company',
-        targetId: 'c1',
-        userId: 'user_buyer1',
-        rating: 4.9,
-        content: '启元AI的服务非常专业，从需求分析到部署上线全程跟进，响应速度快。',
-      },
-    }),
-  ]);
-  console.log(`Created ${reviews.length} reviews`);
+  console.log('Created message thread');
 
   console.log('Seeding completed successfully!');
 }

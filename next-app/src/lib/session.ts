@@ -2,29 +2,8 @@
 
 import { cookies } from 'next/headers';
 import { signToken, verifyToken, hashPassword, comparePassword } from '@/lib/auth';
+import prisma from '@/lib/db/client';
 import type { User, UserRole } from '@/types';
-
-// ---- In-memory user store (replace with database in production) ----
-interface StoredUser {
-  id: string;
-  name: string;
-  email: string;
-  passwordHash: string;
-  role: UserRole;
-  orgId?: string;
-  avatar?: string;
-  createdAt: string;
-}
-
-const users: StoredUser[] = [];
-
-function findUserByEmail(email: string): StoredUser | undefined {
-  return users.find((u) => u.email === email);
-}
-
-function generateId(): string {
-  return `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-}
 
 // ---- Session helpers ----
 
@@ -65,7 +44,7 @@ export async function loginAction(
       return { success: false, error: '请输入邮箱和密码' };
     }
 
-    const user = findUserByEmail(email);
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return { success: false, error: '邮箱或密码错误' };
     }
@@ -80,7 +59,7 @@ export async function loginAction(
       email: user.email,
       name: user.name,
       role: user.role,
-      orgId: user.orgId,
+      orgId: user.orgId ?? undefined,
     });
 
     return { success: true };
@@ -104,7 +83,7 @@ export async function registerAction(
       return { success: false, error: '密码至少需要6个字符' };
     }
 
-    const existing = findUserByEmail(email);
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return { success: false, error: '该邮箱已被注册' };
     }
@@ -115,23 +94,21 @@ export async function registerAction(
     }
 
     const passwordHash = await hashPassword(password);
-    const newUser: StoredUser = {
-      id: generateId(),
-      name,
-      email,
-      passwordHash,
-      role: role as UserRole,
-      createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
+    const newUser = await prisma.user.create({
+      data: {
+        name,
+        email,
+        passwordHash,
+        role: role as UserRole,
+      },
+    });
 
     await createSessionCookie({
       userId: newUser.id,
       email: newUser.email,
       name: newUser.name,
       role: newUser.role,
-      orgId: newUser.orgId,
+      orgId: newUser.orgId ?? undefined,
     });
 
     return { success: true };
@@ -159,19 +136,21 @@ export async function getCurrentUser(): Promise<User | null> {
     }
 
     const userId = payload.userId as string;
-    const user = users.find((u) => u.id === userId);
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       return null;
     }
 
+    // Exclude passwordHash before returning to the frontend
+    const { passwordHash: _ph, ...safeUser } = user;
     return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
-      role: user.role,
-      orgId: user.orgId,
-      createdAt: user.createdAt,
+      id: safeUser.id,
+      name: safeUser.name,
+      email: safeUser.email,
+      avatar: safeUser.avatar ?? undefined,
+      role: safeUser.role as UserRole,
+      orgId: safeUser.orgId ?? undefined,
+      createdAt: safeUser.createdAt.toISOString(),
     };
   } catch {
     return null;
