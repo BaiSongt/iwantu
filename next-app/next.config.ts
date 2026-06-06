@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   turbopack: {},
 
   serverExternalPackages: ["bcryptjs"],
+
+  // Enable standalone output for Docker production builds
+  output: "standalone",
 };
 
 export default nextConfig;
