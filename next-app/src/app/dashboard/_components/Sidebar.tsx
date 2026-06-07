@@ -80,6 +80,7 @@ function getNavItems(role: UserRole): NavConfig[] {
       { label: '用户管理', href: '/dashboard/admin/users', icon: Users },
       { label: '内容审核', href: '/dashboard/admin/reviews', icon: Shield },
       { label: '系统设置', href: '/dashboard/admin/settings', icon: Settings },
+      { label: '消息', href: '/dashboard/messages', icon: MessageSquare },
     ],
   };
 

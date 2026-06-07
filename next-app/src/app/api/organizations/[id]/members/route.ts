@@ -196,3 +196,95 @@ export async function DELETE(
     return handleApiError(error);
   }
 }
+
+/**
+ * PUT /api/organizations/[id]/members — Update member role
+ * requireAuth + verify admin/owner
+ * Body: { userId: string, role: 'admin' | 'member' }
+ */
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const auth = await requireAuth(request);
+    if ('error' in auth) return auth.error;
+
+    const { id } = await params;
+    const body = await request.json();
+    const { userId, role } = body;
+
+    if (!userId) {
+      return Response.json({ error: '请指定要修改的成员' }, { status: 400 });
+    }
+
+    const validMemberRoles = ['admin', 'member'];
+    if (!role || !validMemberRoles.includes(role)) {
+      return Response.json(
+        { error: '无效的成员角色，支持: admin, member' },
+        { status: 400 },
+      );
+    }
+
+    // Verify requester is admin/owner
+    const requesterMembership = await prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId: auth.user.id, orgId: id } },
+    });
+
+    if (!requesterMembership || !['owner', 'admin'].includes(requesterMembership.role)) {
+      return Response.json({ error: '无权限修改成员角色' }, { status: 403 });
+    }
+
+    // Find target member
+    const targetMember = await prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId, orgId: id } },
+    });
+
+    if (!targetMember) {
+      return Response.json({ error: '该用户不是组织成员' }, { status: 404 });
+    }
+
+    // Cannot change the role of the org owner
+    if (targetMember.role === 'owner') {
+      return Response.json(
+        { error: '无法修改所有者角色，请使用所有权转让功能' },
+        { status: 400 },
+      );
+    }
+
+    // Admin cannot promote to owner
+    if (role === 'owner') {
+      return Response.json(
+        { error: '只有当前所有者可以转让所有权' },
+        { status: 400 },
+      );
+    }
+
+    // Admin cannot modify another admin's role (only owner can)
+    if (targetMember.role === 'admin' && requesterMembership.role === 'admin') {
+      return Response.json(
+        { error: '管理员无法修改其他管理员的角色' },
+        { status: 403 },
+      );
+    }
+
+    const updated = await prisma.organizationMember.update({
+      where: { id: targetMember.id },
+      data: { role },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    return apiSuccess(updated);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

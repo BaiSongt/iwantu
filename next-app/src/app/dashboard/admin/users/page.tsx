@@ -157,16 +157,19 @@ export default function AdminUsersPage() {
   async function handleChangeRole(userId: string, newRole: string) {
     if (!confirm(`确定要将该用户角色更改为「${ROLE_MAP[newRole]?.label ?? newRole}」吗？`)) return;
     try {
-      const res = await fetch(`/api/users/me`, {
+      const res = await fetch(`/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, role: newRole }),
+        body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {
         await fetchUsers();
+      } else {
+        const json = await res.json();
+        alert(json.error || '更新角色失败');
       }
     } catch {
-      // ignore
+      alert('网络错误，请重试');
     }
   }
 
