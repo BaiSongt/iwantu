@@ -8,6 +8,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'companies', label: 'AI公司', href: '/companies' },
   { id: 'demands', label: '需求大厅', href: '/demands' },
   { id: 'solutions', label: '解决方案', href: '/solutions' },
+  { id: 'developers', label: 'API', href: '/developers' },
 ];
 
 export const PRODUCTS: Product[] = [
