@@ -1,19 +1,82 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { Package } from 'lucide-react';
 import type { Product } from '@/types';
-import FilterPanel from '@/components/ui/FilterPanel';
+import FilterPanel, { type FilterGroupDef } from '@/components/ui/FilterPanel';
 import Toolbar from '@/components/ui/Toolbar';
 import ProductCard from '@/components/cards/ProductCard';
 
-const FILTER_GROUPS = [
-  '能力分类',
-  '部署方式',
-  '价格模式',
-  '行业场景',
-  '认证状态',
+const CATEGORY_OPTIONS = [
+  { label: 'AI对话', value: 'ai_chat' },
+  { label: 'AI写作', value: 'ai_writing' },
+  { label: 'AI绘画', value: 'ai_image' },
+  { label: 'AI视频', value: 'ai_video' },
+  { label: 'AI音频', value: 'ai_audio' },
+  { label: 'AI代码', value: 'ai_code' },
+  { label: 'AI数据分析', value: 'ai_data' },
+  { label: 'AI安全', value: 'ai_security' },
+  { label: 'AI OCR', value: 'ai_ocr' },
+  { label: 'AI Agent', value: 'ai_agent' },
+  { label: 'AI搜索', value: 'ai_search' },
+  { label: 'AI翻译', value: 'ai_translate' },
+  { label: '数字人', value: 'digital_human' },
+  { label: 'AI知识库', value: 'ai_knowledge' },
+  { label: '其他', value: 'other' },
+];
+
+const DEPLOYMENT_OPTIONS = [
+  { label: 'SaaS', value: 'saas' },
+  { label: '私有云', value: 'private_cloud' },
+  { label: '本地化', value: 'on_premise' },
+  { label: '混合', value: 'hybrid' },
+];
+
+const PRICING_OPTIONS = [
+  { label: '订阅制', value: 'subscription' },
+  { label: '按项目', value: 'per_project' },
+  { label: '按席位', value: 'per_seat' },
+  { label: '按用量', value: 'pay_per_use' },
+  { label: '定制', value: 'custom' },
+];
+
+const INDUSTRY_OPTIONS = [
+  { label: '制造业', value: 'manufacturing' },
+  { label: '政务', value: 'government' },
+  { label: '金融', value: 'finance' },
+  { label: '教育', value: 'education' },
+  { label: '科研', value: 'research' },
+  { label: '医疗', value: 'healthcare' },
+  { label: '零售', value: 'retail' },
+  { label: '能源', value: 'energy' },
+  { label: '工业软件', value: 'industrial_software' },
+];
+
+const PRODUCT_FILTER_GROUPS: FilterGroupDef[] = [
+  {
+    key: 'category',
+    label: '能力分类',
+    type: 'select',
+    options: CATEGORY_OPTIONS,
+  },
+  {
+    key: 'deploymentMode',
+    label: '部署方式',
+    type: 'select',
+    options: DEPLOYMENT_OPTIONS,
+  },
+  {
+    key: 'pricingModel',
+    label: '价格模式',
+    type: 'select',
+    options: PRICING_OPTIONS,
+  },
+  {
+    key: 'industry',
+    label: '行业场景',
+    type: 'select',
+    options: INDUSTRY_OPTIONS,
+  },
 ];
 
 export default function ProductsPage() {
@@ -21,7 +84,25 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
+
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value === '' || value === undefined) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setFilters({});
+    setSearchText('');
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -30,7 +111,9 @@ export default function ProductsPage() {
       const params = new URLSearchParams();
       if (filters.category) params.set('category', filters.category);
       if (filters.industry) params.set('industry', filters.industry);
-      if (filters.search) params.set('search', filters.search);
+      if (filters.deploymentMode) params.set('deploymentMode', filters.deploymentMode);
+      if (filters.pricingModel) params.set('pricingModel', filters.pricingModel);
+      if (searchText) params.set('search', searchText);
       params.set('status', 'published');
 
       const res = await fetch(`/api/products?${params.toString()}`);
@@ -42,7 +125,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, searchText]);
 
   useEffect(() => {
     fetchProducts();
@@ -61,10 +144,36 @@ export default function ProductsPage() {
         </p>
       </div>
 
+      {/* Search Bar */}
+      <div className="mb-6">
+        <div className="relative max-w-xl">
+          <input
+            type="text"
+            placeholder="搜索产品..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="w-full rounded-xl border border-line bg-panel px-4 py-3 pl-4 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 transition-colors"
+          />
+          {searchText && (
+            <button
+              onClick={() => setSearchText('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground border-0 bg-transparent cursor-pointer"
+            >
+              &#10005;
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Two-column layout: Filter sidebar + Content */}
       <div className="grid grid-cols-1 gap-8 items-start lg:grid-cols-[260px_1fr]">
         {/* Filter Sidebar */}
-        <FilterPanel groups={FILTER_GROUPS} />
+        <FilterPanel
+          groups={PRODUCT_FILTER_GROUPS}
+          values={filters}
+          onChange={handleFilterChange}
+          onClear={handleClearFilters}
+        />
 
         {/* Content Area */}
         <div>

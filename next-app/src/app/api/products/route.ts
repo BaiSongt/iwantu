@@ -10,10 +10,12 @@ export async function OPTIONS() {
  * GET /api/products — Public product listing.
  *
  * Query params:
- *   category  - filter by product category
- *   search    - text search on name / summary / description
- *   industry  - filter by industry tag
- *   status    - filter by status (defaults to 'published')
+ *   category       - filter by product category
+ *   search         - text search on name / summary / description
+ *   industry       - filter by industry tag
+ *   status         - filter by status (defaults to 'published')
+ *   deploymentMode - filter by deployment mode (saas, private_cloud, on_premise, hybrid)
+ *   pricingModel   - filter by pricing model
  */
 export async function GET(request: Request) {
   try {
@@ -23,12 +25,16 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || undefined;
     const industry = searchParams.get('industry') || undefined;
     const status = searchParams.get('status') || 'published';
+    const deploymentMode = searchParams.get('deploymentMode') || undefined;
+    const pricingModel = searchParams.get('pricingModel') || undefined;
 
     const products = await getProducts({
       category,
       search,
       industry,
       status,
+      deploymentMode,
+      pricingModel,
     });
 
     return apiSuccess(products);

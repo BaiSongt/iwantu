@@ -11,11 +11,17 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
     const search = searchParams.get('search');
     const userId = searchParams.get('userId');
+    const supportPoc = searchParams.get('supportPoc');
+    const budgetMin = searchParams.get('budgetMin');
+    const budgetMax = searchParams.get('budgetMax');
 
     if (industry) filters.industry = industry;
     if (status) filters.status = status;
     if (search) filters.search = search;
     if (userId) filters.ownerUserId = userId;
+    if (supportPoc) filters.supportPoc = supportPoc;
+    if (budgetMin) filters.budgetMin = parseFloat(budgetMin);
+    if (budgetMax) filters.budgetMax = parseFloat(budgetMax);
 
     const demands = await getDemands(filters);
     return apiSuccess(demands);

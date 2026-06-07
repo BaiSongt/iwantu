@@ -228,6 +228,115 @@ export async function createProposal(data: {
 }
 
 /**
+ * Update a proposal's quote items (replace all) and optional fields.
+ *
+ * This is used by the quote builder to save the full set of quote items
+ * and optionally update milestones, price, scope, and status.
+ *
+ * @param id - Proposal ID
+ * @param data.quoteItems - Array of quote item data to replace the existing set
+ * @param data.milestones - Optional array of milestone data to replace the existing set
+ * @param data.price - Optional total price override
+ * @param data.scope - Optional scope override
+ * @param data.status - Optional status override
+ * @returns Updated proposal with quoteItems, or null on error
+ */
+export async function updateProposalWithQuoteItems(
+  id: string,
+  data: {
+    quoteItems?: {
+      name: string;
+      description?: string;
+      quantity?: number;
+      unit?: string;
+      unitPrice: number;
+      totalPrice: number;
+    }[];
+    milestones?: {
+      name: string;
+      description?: string;
+      duration: string;
+      deliverables?: string[];
+    }[];
+    price?: number;
+    scope?: string;
+    deliveryPeriod?: string;
+    status?: string;
+  },
+): Promise<(Proposal & { quoteItems: QuoteItem[] }) | null> {
+  try {
+    // Use a transaction to delete old items and create new ones atomically
+    const row = await prisma.$transaction(async (tx) => {
+      // Delete existing quote items if we're replacing them
+      if (data.quoteItems !== undefined) {
+        await tx.quoteItem.deleteMany({ where: { proposalId: id } });
+      }
+
+      // Delete existing milestones if we're replacing them
+      if (data.milestones !== undefined) {
+        await tx.milestone.deleteMany({ where: { proposalId: id } });
+      }
+
+      // Build update payload
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updateData: any = {};
+
+      if (data.price !== undefined) updateData.price = data.price;
+      if (data.scope !== undefined) updateData.scope = data.scope;
+      if (data.deliveryPeriod !== undefined) updateData.deliveryPeriod = data.deliveryPeriod;
+      if (data.status !== undefined) updateData.status = data.status;
+
+      if (data.quoteItems !== undefined) {
+        updateData.quoteItems = {
+          create: data.quoteItems.map((q) => ({
+            name: q.name,
+            description: q.description,
+            quantity: q.quantity ?? 1,
+            unit: q.unit ?? '项',
+            unitPrice: q.unitPrice,
+            totalPrice: q.totalPrice,
+          })),
+        };
+      }
+
+      if (data.milestones !== undefined) {
+        updateData.milestones = {
+          create: data.milestones.map((m) => ({
+            name: m.name,
+            description: m.description,
+            duration: m.duration,
+            deliverables: m.deliverables ?? [],
+          })),
+        };
+      }
+
+      return tx.proposal.update({
+        where: { id },
+        data: updateData,
+        include: {
+          milestones: true,
+          quoteItems: true,
+        },
+      });
+    });
+
+    if (!row) return null;
+
+    const proposal = toProposalShape(row);
+    if (!proposal) return null;
+
+    const quoteItems = (row.quoteItems ?? [])
+      .map(toQuoteItemShape)
+      .filter((q): q is QuoteItem => q !== null);
+
+    return { ...proposal, quoteItems };
+  } catch (error) {
+    console.error('[DAL] updateProposalWithQuoteItems failed:', error);
+    return null;
+  }
+}
+
+/**
  * Change the status of a proposal.
  *
  * @param id - Proposal ID

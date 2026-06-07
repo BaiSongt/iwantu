@@ -19,6 +19,7 @@ import {
   X,
   ArrowRightLeft,
   Building2,
+  Key,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 
@@ -53,6 +54,7 @@ function getNavItems(role: UserRole): NavConfig[] {
   const common: NavConfig[] = [
     { label: '工作台', href: '/dashboard', icon: LayoutDashboard },
     { label: '组织管理', href: '/dashboard/org', icon: Building2 },
+    { label: 'API 密钥', href: '/dashboard/api-keys', icon: Key },
     { label: '个人资料', href: '/dashboard/profile', icon: User },
   ];
 

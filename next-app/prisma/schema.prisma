@@ -153,6 +153,8 @@ model User {
   reviews             Review[]               @relation("ReviewAuthor")
   auditLogs           AuditLog[]             @relation("AuditLogUser")
   agentActions        AgentAction[]          @relation("AgentActionDelegator")
+  apiKeys             ApiKey[]               @relation("ApiKeyOwner")
+  notifications       Notification[]
 
   @@index([orgId])
   @@index([role])
@@ -511,6 +513,23 @@ model AgentAction {
   @@map("agent_actions")
 }
 
+model ApiKey {
+  id         String    @id @default(cuid())
+  key        String    @unique
+  name       String
+  userId     String
+  scopes     String[]
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation("ApiKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([key])
+  @@map("api_keys")
+}
+
 model Attachment {
   id          String               @id @default(cuid())
   targetType  AttachmentTargetType
@@ -555,4 +574,20 @@ model FeaturedItem {
   @@index([itemType])
   @@index([active])
   @@map("featured_items")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // proposal_received, proposal_accepted, poc_status, message, system
+  title     String
+  content   String
+  read      Boolean  @default(false)
+  link      String?  // URL to related resource
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

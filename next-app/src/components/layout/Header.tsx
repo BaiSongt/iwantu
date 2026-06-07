@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_ITEMS } from '@/lib/constants';
 import UserMenu from '@/components/auth/UserMenu';
+import NotificationBell from '@/components/layout/NotificationBell';
 
 export default function Header() {
   const pathname = usePathname();
@@ -56,6 +57,7 @@ export default function Header() {
         >
           发布产品
         </Link>
+        <NotificationBell />
         <UserMenu />
       </div>
     </header>

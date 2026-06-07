@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Demand, MetricItem } from '@/types';
 import MetricGrid from '@/components/ui/MetricGrid';
-import FilterPanel from '@/components/ui/FilterPanel';
+import FilterPanel, { type FilterGroupDef } from '@/components/ui/FilterPanel';
 import Toolbar from '@/components/ui/Toolbar';
 import DemandCard from '@/components/cards/DemandCard';
 
@@ -16,14 +15,80 @@ const METRICS: MetricItem[] = [
   { value: '24h', label: '平均响应' },
 ];
 
-const FILTER_GROUPS = ['行业', '预算', '周期', '是否POC', '数据类型'];
+const INDUSTRY_OPTIONS = [
+  { label: '制造业', value: 'manufacturing' },
+  { label: '政务', value: 'government' },
+  { label: '金融', value: 'finance' },
+  { label: '教育', value: 'education' },
+  { label: '科研', value: 'research' },
+  { label: '医疗', value: 'healthcare' },
+  { label: '零售', value: 'retail' },
+  { label: '能源', value: 'energy' },
+  { label: '工业软件', value: 'industrial_software' },
+];
+
+const STATUS_OPTIONS = [
+  { label: '征集中', value: 'collecting_proposals' },
+  { label: '需求澄清', value: 'clarifying' },
+  { label: 'POC进行中', value: 'in_poc' },
+];
+
+const POC_OPTIONS = [
+  { label: '支持', value: 'true' },
+  { label: '不支持', value: 'false' },
+];
+
+const DEMAND_FILTER_GROUPS: FilterGroupDef[] = [
+  {
+    key: 'industry',
+    label: '行业',
+    type: 'select',
+    options: INDUSTRY_OPTIONS,
+  },
+  {
+    key: 'status',
+    label: '状态',
+    type: 'select',
+    options: STATUS_OPTIONS,
+  },
+  {
+    key: 'budget',
+    label: '预算范围',
+    type: 'range',
+    placeholder: '预算(万)',
+  },
+  {
+    key: 'supportPoc',
+    label: '是否POC',
+    type: 'toggle',
+    options: POC_OPTIONS,
+  },
+];
 
 export default function DemandsPage() {
   const router = useRouter();
   const [demands, setDemands] = useState<Demand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
+
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value === '' || value === undefined) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setFilters({});
+    setSearchText('');
+  }, []);
 
   const fetchDemands = useCallback(async () => {
     setLoading(true);
@@ -32,7 +97,15 @@ export default function DemandsPage() {
       const params = new URLSearchParams();
       if (filters.industry) params.set('industry', filters.industry);
       if (filters.status) params.set('status', filters.status);
-      if (filters.search) params.set('search', filters.search);
+      if (filters.supportPoc) params.set('supportPoc', filters.supportPoc);
+      if (searchText) params.set('search', searchText);
+
+      // Budget range: format is "min-max"
+      if (filters.budget) {
+        const [min, max] = filters.budget.split('-');
+        if (min) params.set('budgetMin', min);
+        if (max) params.set('budgetMax', max);
+      }
 
       const res = await fetch(`/api/demands?${params.toString()}`);
       if (!res.ok) throw new Error('获取需求失败');
@@ -43,7 +116,7 @@ export default function DemandsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, searchText]);
 
   useEffect(() => {
     fetchDemands();
@@ -64,11 +137,37 @@ export default function DemandsPage() {
         <MetricGrid items={METRICS} />
       </div>
 
+      {/* Search Bar */}
+      <div className="mb-6">
+        <div className="relative max-w-xl">
+          <input
+            type="text"
+            placeholder="搜索需求..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="w-full rounded-xl border border-line bg-panel px-4 py-3 pl-4 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 transition-colors"
+          />
+          {searchText && (
+            <button
+              onClick={() => setSearchText('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground border-0 bg-transparent cursor-pointer"
+            >
+              &#10005;
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Sidebar + Content */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Sidebar */}
         <div className="lg:col-span-1">
-          <FilterPanel groups={FILTER_GROUPS} />
+          <FilterPanel
+            groups={DEMAND_FILTER_GROUPS}
+            values={filters}
+            onChange={handleFilterChange}
+            onClear={handleClearFilters}
+          />
         </div>
 
         {/* Content */}

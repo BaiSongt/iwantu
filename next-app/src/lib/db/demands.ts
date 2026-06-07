@@ -64,9 +64,13 @@ export async function getDemands(filters?: {
   status?: string;
   ownerUserId?: string;
   search?: string;
+  supportPoc?: string;
+  budgetMin?: number;
+  budgetMax?: number;
 }): Promise<Demand[]> {
   try {
-    const where: Record<string, unknown> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = {};
 
     if (filters?.industry) {
       where.industry = filters.industry;
@@ -79,6 +83,19 @@ export async function getDemands(filters?: {
     }
     if (filters?.search) {
       where.title = { contains: filters.search, mode: 'insensitive' };
+    }
+    if (filters?.supportPoc === 'true' || filters?.supportPoc === 'yes') {
+      where.supportPoc = true;
+    } else if (filters?.supportPoc === 'false' || filters?.supportPoc === 'no') {
+      where.supportPoc = false;
+    }
+    if (filters?.budgetMin != null && filters.budgetMin > 0) {
+      // Demand's budgetMax must be >= user's minimum
+      where.budgetMax = { gte: filters.budgetMin };
+    }
+    if (filters?.budgetMax != null && filters.budgetMax > 0) {
+      // Demand's budgetMin must be <= user's maximum
+      where.budgetMin = { lte: filters.budgetMax };
     }
 
     const rows = await prisma.demand.findMany({

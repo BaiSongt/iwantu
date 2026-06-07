@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
-import { getProposalById, updateProposalStatus } from '@/lib/db/proposals';
+import { getProposalById, updateProposalStatus, updateProposalWithQuoteItems } from '@/lib/db/proposals';
 import { updateDemandStatus } from '@/lib/db/demands';
 import prisma from '@/lib/db/client';
 import type { UserRole } from '@/types';
@@ -86,8 +86,10 @@ export async function GET(
 /**
  * PUT /api/proposals/[id]
  *
- * Update proposal status (accept/reject). Only the demand owner or admin can
- * change the status. If accepted, the demand transitions to 'in_poc'.
+ * Dual-purpose handler:
+ * 1. Supplier: Save quote items, milestones, price, scope (requires supplier ownership).
+ * 2. Buyer / Admin: Accept / reject proposal by changing status.
+ *    If accepted, the demand transitions to 'in_poc'.
  */
 export async function PUT(
   request: Request,
@@ -107,8 +109,53 @@ export async function PUT(
       );
     }
 
-    // Only demand owner or admin can accept/reject
+    const body = await request.json();
     const isAdmin = ADMIN_ROLES.includes(auth.user.role as UserRole);
+
+    // --- Case 1: Supplier saving quote items / milestones ---
+    const isSupplier = auth.user.orgId === proposal.supplierId;
+    if (isSupplier && (body.quoteItems !== undefined || body.milestones !== undefined)) {
+      // Supplier can save quote items and milestones
+      const updated = await updateProposalWithQuoteItems(id, {
+        quoteItems: body.quoteItems,
+        milestones: body.milestones,
+        price: body.price,
+        scope: body.scope,
+        deliveryPeriod: body.deliveryPeriod,
+        status: body.status,
+      });
+
+      if (!updated) {
+        return NextResponse.json(
+          { error: '更新报价失败' },
+          { status: 500, headers: corsHeaders() },
+        );
+      }
+
+      // Enrich with supplier org info
+      const org = await prisma.organization.findUnique({
+        where: { id: proposal.supplierId },
+        select: { name: true, logo: true },
+      });
+
+      return apiSuccess({
+        ...updated,
+        supplierOrgName: org?.name ?? '未知供应商',
+        supplierOrgLogo: org?.logo ?? null,
+      });
+    }
+
+    // --- Case 2: Buyer / Admin changing status ---
+    const newStatus = body.status as string;
+
+    if (!newStatus) {
+      return NextResponse.json(
+        { error: '请提供状态' },
+        { status: 400, headers: corsHeaders() },
+      );
+    }
+
+    // Only demand owner or admin can accept/reject
     if (!isAdmin) {
       const demandRow = await prisma.demand.findUnique({
         where: { id: proposal.demandId },
@@ -120,16 +167,6 @@ export async function PUT(
           { status: 403, headers: corsHeaders() },
         );
       }
-    }
-
-    const body = await request.json();
-    const newStatus = body.status as string;
-
-    if (!newStatus) {
-      return NextResponse.json(
-        { error: '请提供状态' },
-        { status: 400, headers: corsHeaders() },
-      );
     }
 
     // Validate status transition

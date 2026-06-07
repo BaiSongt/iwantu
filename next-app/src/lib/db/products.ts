@@ -22,6 +22,8 @@ export async function getProducts(filters?: {
   category?: string;
   status?: string;
   search?: string;
+  deploymentMode?: string;
+  pricingModel?: string;
 }): Promise<Product[]> {
   try {
     const where: Record<string, unknown> = {};
@@ -40,6 +42,14 @@ export async function getProducts(filters?: {
 
     if (filters?.industry) {
       where.industryTags = { has: filters.industry };
+    }
+
+    if (filters?.deploymentMode) {
+      where.deploymentModes = { has: filters.deploymentMode };
+    }
+
+    if (filters?.pricingModel) {
+      where.pricingModel = filters.pricingModel;
     }
 
     if (filters?.search) {
