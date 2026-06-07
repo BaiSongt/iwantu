@@ -1,9 +1,9 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { DEMANDS } from '@/lib/constants';
-import type { MetricItem } from '@/types';
+import type { Demand, MetricItem } from '@/types';
 import MetricGrid from '@/components/ui/MetricGrid';
 import FilterPanel from '@/components/ui/FilterPanel';
 import Toolbar from '@/components/ui/Toolbar';
@@ -20,6 +20,34 @@ const FILTER_GROUPS = ['行业', '预算', '周期', '是否POC', '数据类型'
 
 export default function DemandsPage() {
   const router = useRouter();
+  const [demands, setDemands] = useState<Demand[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+
+  const fetchDemands = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (filters.industry) params.set('industry', filters.industry);
+      if (filters.status) params.set('status', filters.status);
+      if (filters.search) params.set('search', filters.search);
+
+      const res = await fetch(`/api/demands?${params.toString()}`);
+      if (!res.ok) throw new Error('获取需求失败');
+      const data = await res.json();
+      setDemands(Array.isArray(data) ? data : data.data ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载失败，请重试');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    fetchDemands();
+  }, [fetchDemands]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10 animate-fade-up">
@@ -46,21 +74,63 @@ export default function DemandsPage() {
         {/* Content */}
         <div className="lg:col-span-3">
           <Toolbar
-            count="最新需求"
+            count={loading ? '加载中...' : `最新需求（${demands.length}）`}
             actionLabel="发布需求"
             onAction={() => router.push('/demands/publish')}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {DEMANDS.map((demand, i) => (
-              <div
-                key={demand.id}
-                style={{ '--stagger': `${i * 80}ms` } as React.CSSProperties}
+          {error && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5 text-center">
+              <p className="text-sm text-red-600 mb-3">{error}</p>
+              <button
+                onClick={fetchDemands}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white border-0 cursor-pointer transition-colors hover:bg-red-700"
               >
-                <DemandCard demand={demand} />
-              </div>
-            ))}
-          </div>
+                重试
+              </button>
+            </div>
+          )}
+
+          {!error && loading && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="animate-pulse rounded-2xl border border-line bg-panel p-5"
+                >
+                  <div className="h-4 w-16 rounded bg-muted/20" />
+                  <div className="mt-3 h-5 w-3/4 rounded bg-muted/20" />
+                  <div className="mt-3 flex gap-4">
+                    <div className="h-4 w-20 rounded bg-muted/20" />
+                    <div className="h-4 w-16 rounded bg-muted/20" />
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <div className="h-4 w-24 rounded bg-muted/20" />
+                    <div className="h-8 w-16 rounded-xl bg-muted/20" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!error && !loading && demands.length === 0 && (
+            <div className="rounded-xl border border-line bg-panel p-12 text-center">
+              <p className="text-muted text-sm">暂无需求</p>
+            </div>
+          )}
+
+          {!error && !loading && demands.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {demands.map((demand, i) => (
+                <div
+                  key={demand.id}
+                  style={{ '--stagger': `${i * 80}ms` } as React.CSSProperties}
+                >
+                  <DemandCard demand={demand} index={i} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

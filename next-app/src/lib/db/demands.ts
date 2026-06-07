@@ -196,12 +196,17 @@ export async function updateDemand(
     supportPoc: boolean;
     allowAiSupplier: boolean;
     allowAiAutoBid: boolean;
+    status: string;
   }>,
 ): Promise<Demand | null> {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: any = { ...data };
+    if (data.status) updateData.status = data.status as any;
+
     const row = await prisma.demand.update({
       where: { id },
-      data,
+      data: updateData,
       include: { ownerUser: true },
     });
     return toDemandShape(row);
@@ -243,6 +248,23 @@ export async function updateDemandStatus(
  */
 export async function publishDemand(id: string): Promise<Demand | null> {
   return updateDemandStatus(id, 'collecting_proposals');
+}
+
+/**
+ * Delete a demand by ID.
+ * Caller should verify ownership and status before calling.
+ *
+ * @param id - Demand ID
+ * @returns true on success, false on error
+ */
+export async function deleteDemand(id: string): Promise<boolean> {
+  try {
+    await prisma.demand.delete({ where: { id } });
+    return true;
+  } catch (error) {
+    console.error('[DAL] deleteDemand failed:', error);
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

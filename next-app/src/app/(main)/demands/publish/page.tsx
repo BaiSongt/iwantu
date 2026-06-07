@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { Sparkles, WandSparkles, FileText, Send, CheckCircle, AlertCircle, Lightbulb } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState, useCallback } from 'react';
+import { Sparkles, WandSparkles, Send, CheckCircle, AlertCircle, Lightbulb, Loader2, XCircle } from 'lucide-react';
 
 const FORM_FIELDS = [
   { label: '联系人', key: 'contact', placeholder: '请输入联系人姓名' },
@@ -27,13 +27,123 @@ const AI_SUGGESTIONS = [
   { icon: <Lightbulb className="h-4 w-4 text-primary" />, text: '可添加验收标准以提高匹配精度' },
 ];
 
+type FormState = Record<string, string>;
+
 export default function PublishDemandPage() {
+  const router = useRouter();
+  const [form, setForm] = useState<FormState>({});
   const [description, setDescription] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const showToast = useCallback(
+    (type: 'success' | 'error', message: string) => {
+      setToast({ type, message });
+      setTimeout(() => setToast(null), 3000);
+    },
+    [],
+  );
+
+  const handleFieldChange = (key: string, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!form.title?.trim()) {
+      showToast('error', '请输入需求标题');
+      return;
+    }
+    if (!form.industry?.trim()) {
+      showToast('error', '请选择行业场景');
+      return;
+    }
+    if (!description.trim()) {
+      showToast('error', '请填写需求详细描述');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      // Map form fields to API shape
+      const pocValue = form.poc?.trim();
+      const supportPoc = pocValue === '是' || pocValue === 'true' || pocValue === '1';
+
+      // Parse dataType string into array (comma or Chinese comma separated)
+      const dataTypes = form.dataType
+        ? form.dataType.split(/[,，、]/).map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const payload = {
+        title: form.title.trim(),
+        industry: form.industry.trim(),
+        budgetRange: form.budget?.trim() ?? '',
+        deliveryPeriod: form.period?.trim() ?? '',
+        deploymentRequirement: form.deploy?.trim() ?? '',
+        dataTypes,
+        supportPoc,
+        description: description.trim(),
+        painPoints: '',
+        existingSystems: form.integration?.trim() ?? '',
+        allowAiSupplier: true,
+      };
+
+      const res = await fetch('/api/demands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '发布失败');
+      }
+
+      const result = await res.json();
+      showToast('success', '需求发布成功！');
+
+      // Redirect to the new demand detail page or dashboard
+      const newId = result?.id;
+      setTimeout(() => {
+        if (newId) {
+          router.push(`/demands/${newId}`);
+        } else {
+          router.push('/dashboard/demands');
+        }
+      }, 1000);
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : '发布失败，请重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10 animate-fade-up">
       <h1 className="text-2xl font-bold text-foreground mb-1">发布AI需求</h1>
       <p className="text-sm text-muted mb-8">填写需求信息，AI助手将帮助你完善需求描述，提高匹配精度。</p>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`mb-6 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium ${
+            toast.type === 'success'
+              ? 'bg-green/10 text-green border border-green/20'
+              : 'bg-red-50 text-red-600 border border-red-200'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle className="h-4 w-4" />
+          ) : (
+            <XCircle className="h-4 w-4" />
+          )}
+          {toast.message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Form */}
@@ -54,13 +164,19 @@ export default function PublishDemandPage() {
               <WandSparkles className="h-4 w-4" />
               生成标准需求书
             </button>
-            <Link
-              href="/demands"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white hover:bg-primary/90 transition-colors"
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              <Send className="h-4 w-4" />
-              发布需求
-            </Link>
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              {submitting ? '发布中...' : '发布需求'}
+            </button>
           </div>
 
           {/* Form Card */}
@@ -76,6 +192,8 @@ export default function PublishDemandPage() {
                   </label>
                   <input
                     type="text"
+                    value={form[field.key] ?? ''}
+                    onChange={(e) => handleFieldChange(field.key, e.target.value)}
                     placeholder={field.placeholder}
                     className="w-full rounded-lg border border-line bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-colors"
                   />

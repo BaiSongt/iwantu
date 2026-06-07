@@ -10,10 +10,12 @@ export async function GET(request: Request) {
     const industry = searchParams.get('industry');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const userId = searchParams.get('userId');
 
     if (industry) filters.industry = industry;
     if (status) filters.status = status;
     if (search) filters.search = search;
+    if (userId) filters.ownerUserId = userId;
 
     const demands = await getDemands(filters);
     return apiSuccess(demands);
