@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ChevronRight,
@@ -10,8 +10,9 @@ import {
   MessageSquare,
   GitCompare,
   Shield,
+  Loader2,
 } from 'lucide-react';
-import { PRODUCTS } from '@/lib/constants';
+import type { Product } from '@/types';
 import VisualShot from '@/components/ui/VisualShot';
 import TagCloud from '@/components/ui/TagCloud';
 import InfoRows from '@/components/ui/InfoRows';
@@ -25,10 +26,45 @@ export default function ProductDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const product = PRODUCTS.find((p) => p.id === id);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
 
-  if (!product) {
+  const fetchProduct = useCallback(async () => {
+    setLoading(true);
+    setNotFound(false);
+    try {
+      const res = await fetch(`/api/public/products/${id}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          setNotFound(true);
+        }
+        return;
+      }
+      const data = await res.json();
+      setProduct(data);
+    } catch {
+      // network error — leave product null
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-7xl px-6 py-20 flex flex-col items-center justify-center animate-fade-up">
+        <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
+        <p className="text-sm text-muted">加载中...</p>
+      </div>
+    );
+  }
+
+  if (notFound || !product) {
     return (
       <section className="mx-auto max-w-7xl px-6 py-20 text-center animate-fade-up">
         <h1 className="text-2xl font-bold text-foreground mb-3">

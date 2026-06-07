@@ -24,7 +24,7 @@ export default function UserMenu() {
         const res = await fetch('/api/auth/me');
         if (res.ok) {
           const json = await res.json();
-          setUser(json.data);
+          setUser(json.user);
         }
       } catch {
         // Not authenticated

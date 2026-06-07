@@ -52,11 +52,13 @@ export default function NotificationBell() {
   const [data, setData] = useState<NotificationData | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications?limit=10');
+      if (res.status === 401) return; // Not logged in — skip silently
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -66,12 +68,31 @@ export default function NotificationBell() {
     }
   }, []);
 
-  // Fetch on mount and poll every 30 seconds
+  // Check auth status first, then fetch notifications if logged in
   useEffect(() => {
-    fetchNotifications();
+    async function init() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.user) {
+            setAuthenticated(true);
+            await fetchNotifications();
+          }
+        }
+      } catch {
+        // Not authenticated
+      }
+    }
+    init();
+  }, [fetchNotifications]);
+
+  // Poll every 30 seconds only when authenticated
+  useEffect(() => {
+    if (!authenticated) return;
     const interval = setInterval(fetchNotifications, 30_000);
     return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  }, [authenticated, fetchNotifications]);
 
   // Close dropdown on outside click
   useEffect(() => {
