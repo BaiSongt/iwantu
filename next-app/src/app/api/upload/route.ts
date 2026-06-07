@@ -12,6 +12,8 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
 import { saveFile } from '@/lib/storage';
 import { handleApiError, corsHeaders } from '@/lib/api-utils';
+import { uploadSchema, formatZodErrors } from '@/lib/validations';
+import { rateLimit, getClientIdentifier, UPLOAD_LIMIT } from '@/lib/rate-limit';
 
 export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
@@ -19,6 +21,16 @@ export function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
+    // Rate limiting
+    const clientIp = getClientIdentifier(request);
+    const { allowed, retryAfter } = rateLimit(clientIp, UPLOAD_LIMIT);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: '上传请求过于频繁，请稍后再试' },
+        { status: 429, headers: { 'Retry-After': String(retryAfter), ...corsHeaders() } },
+      );
+    }
+
     const auth = await requireAuth(request);
     if ('error' in auth) return auth.error;
 
@@ -35,14 +47,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!targetType || !targetId) {
+    // Validate targetType and targetId
+    const parsed = uploadSchema.safeParse({ targetType, targetId });
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: '缺少 targetType 或 targetId' },
+        { error: '输入验证失败', details: formatZodErrors(parsed.error) },
         { status: 400, headers: corsHeaders() },
       );
     }
 
-    const attachment = await saveFile(file, targetType, targetId);
+    const attachment = await saveFile(file, targetType!, targetId!);
 
     return NextResponse.json(
       {

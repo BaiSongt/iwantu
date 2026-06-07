@@ -27,6 +27,18 @@ const secretKey =
 const encodedKey = new TextEncoder().encode(secretKey);
 
 // ---------------------------------------------------------------------------
+// Security headers applied to every response
+// ---------------------------------------------------------------------------
+
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
+
+// ---------------------------------------------------------------------------
 // Helper: verify the JWT and return its payload, or null on failure
 // ---------------------------------------------------------------------------
 
@@ -81,11 +93,18 @@ export async function proxy(request: NextRequest) {
     requestHeaders.set('x-user-role', payload.role);
   }
 
-  return NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: requestHeaders,
     },
   });
+
+  // Apply security headers to every response
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    response.headers.set(key, value);
+  }
+
+  return response;
 }
 
 // ---------------------------------------------------------------------------

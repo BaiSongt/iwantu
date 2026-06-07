@@ -311,6 +311,7 @@ model Demand {
   @@index([ownerOrgId])
   @@index([status])
   @@index([industry])
+  @@index([createdAt])
   @@map("demands")
 }
 
@@ -550,8 +551,10 @@ model Review {
   targetType ReviewTargetType
   targetId   String
   userId     String
-  rating     Float
+  rating     Int             // 1-5
+  title      String
   content    String
+  status     String          @default("published") // published, hidden
   createdAt  DateTime        @default(now())
 
   author User @relation("ReviewAuthor", fields: [userId], references: [id])

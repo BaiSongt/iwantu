@@ -1,0 +1,123 @@
+# =============================================================================
+# iWantU Platform — Production Docker Compose
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Required environment variables (set in .env or before running):
+#   DATABASE_URL       — PostgreSQL connection string
+#   JWT_SECRET         — Secret key for JWT signing
+#   SSL_CERT_PATH      — Path to SSL certificate (on host)
+#   SSL_KEY_PATH       — Path to SSL private key (on host)
+#   UPLOAD_DIR         — Host path for file uploads (default: ./data/uploads)
+#
+# Optional:
+#   POSTGRES_USER      — PostgreSQL user (default: iwantu)
+#   POSTGRES_PASSWORD  — PostgreSQL password (default: iwantu123)
+#   POSTGRES_DB        — PostgreSQL database (default: iwantu)
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: iwantu-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-iwantu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iwantu123}
+      POSTGRES_DB: ${POSTGRES_DB:-iwantu}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iwantu} -d ${POSTGRES_DB:-iwantu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - iwantu-network
+    # Do NOT expose PostgreSQL to the host in production
+    # If needed for debugging, uncomment:
+    # ports:
+    #   - "5433:5432"
+
+  # ---------------------------------------------------------------------------
+  # Next.js Application
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: ./next-app
+      dockerfile: Dockerfile
+    container_name: iwantu-app-prod
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-iwantu}:${POSTGRES_PASSWORD:-iwantu123}@postgres:5432/${POSTGRES_DB:-iwantu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      NODE_ENV: production
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    networks:
+      - iwantu-network
+    # App listens internally only; nginx handles external traffic
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Nginx Reverse Proxy
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: iwantu-nginx-prod
+    restart: always
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${SSL_CERT_PATH:-./ssl/cert.pem}:/etc/nginx/ssl/cert.pem:ro
+      - ${SSL_KEY_PATH:-./ssl/key.pem}:/etc/nginx/ssl/key.pem:ro
+      - uploads_data:/data/uploads:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - iwantu-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+  nginx_logs:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  iwantu-network:
+    driver: bridge

@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { signToken, verifyToken, hashPassword, comparePassword } from '@/lib/auth';
 import prisma from '@/lib/db/client';
 import type { User, UserRole } from '@/types';
+import { loginSchema, registerSchema, formatZodErrors } from '@/lib/validations';
+import { rateLimit } from '@/lib/rate-limit';
 
 // ---- Session helpers ----
 
@@ -40,11 +42,20 @@ export async function loginAction(
   password: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!email || !password) {
-      return { success: false, error: '请输入邮箱和密码' };
+    // Input validation
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      const errors = formatZodErrors(parsed.error);
+      return { success: false, error: Object.values(errors)[0] || '输入验证失败' };
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Rate limiting — use email as identifier for server actions
+    const { allowed } = rateLimit(email, { limit: 10, windowMs: 60_000 });
+    if (!allowed) {
+      return { success: false, error: '登录尝试过于频繁，请稍后再试' };
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
     if (!user) {
       return { success: false, error: '邮箱或密码错误' };
     }
@@ -76,44 +87,46 @@ export async function registerAction(
   orgName?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!name || !email || !password || !role) {
-      return { success: false, error: '请填写所有必填字段' };
+    // Input validation with Zod
+    const parsed = registerSchema.safeParse({ name, email, password, role, orgName });
+    if (!parsed.success) {
+      const errors = formatZodErrors(parsed.error);
+      return { success: false, error: Object.values(errors)[0] || '输入验证失败' };
     }
 
-    if (password.length < 6) {
-      return { success: false, error: '密码至少需要6个字符' };
+    const validated = parsed.data;
+
+    // Rate limiting — use email as identifier
+    const { allowed } = rateLimit(email, { limit: 5, windowMs: 60_000 });
+    if (!allowed) {
+      return { success: false, error: '注册尝试过于频繁，请稍后再试' };
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({ where: { email: validated.email } });
     if (existing) {
       return { success: false, error: '该邮箱已被注册' };
     }
 
-    const validRoles: UserRole[] = ['buyer', 'supplier', 'opc_team'];
-    if (!validRoles.includes(role as UserRole)) {
-      return { success: false, error: '请选择有效的角色' };
-    }
-
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await hashPassword(validated.password);
 
     // Determine org type from user role
-    const orgType = role === 'buyer' ? 'buyer' : role === 'supplier' ? 'supplier' : 'opc_team';
+    const orgType = validated.role === 'buyer' ? 'buyer' : validated.role === 'supplier' ? 'supplier' : 'opc_team';
 
     // Use transaction when orgName is provided to ensure atomicity
-    if (orgName && orgName.trim()) {
+    if (validated.orgName && validated.orgName.trim()) {
       const result = await prisma.$transaction(async (tx) => {
         const newUser = await tx.user.create({
           data: {
-            name,
-            email,
+            name: validated.name,
+            email: validated.email,
             passwordHash,
-            role: role as UserRole,
+            role: validated.role as UserRole,
           },
         });
 
         const org = await tx.organization.create({
           data: {
-            name: orgName.trim(),
+            name: validated.orgName!.trim(),
             type: orgType,
           },
         });
@@ -144,10 +157,10 @@ export async function registerAction(
     } else {
       const newUser = await prisma.user.create({
         data: {
-          name,
-          email,
+          name: validated.name,
+          email: validated.email,
           passwordHash,
-          role: role as UserRole,
+          role: validated.role as UserRole,
         },
       });
 

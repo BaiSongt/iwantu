@@ -1,6 +1,8 @@
 import { getDemands, createDemand } from '@/lib/db/demands';
 import { requireAuth } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError } from '@/lib/api-utils';
+import { createDemandSchema, formatZodErrors } from '@/lib/validations';
+import { rateLimit, getClientIdentifier, GENERAL_LIMIT } from '@/lib/rate-limit';
 
 export async function GET(request: Request) {
   try {
@@ -32,26 +34,48 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    // Rate limiting
+    const clientIp = getClientIdentifier(request);
+    const { allowed, retryAfter } = rateLimit(clientIp, GENERAL_LIMIT);
+    if (!allowed) {
+      return Response.json(
+        { error: '请求过于频繁，请稍后再试' },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+      );
+    }
+
     const auth = await requireAuth(request);
     if ('error' in auth) return auth.error;
 
     const body = await request.json();
 
+    // Input validation
+    const parsed = createDemandSchema.safeParse(body);
+    if (!parsed.success) {
+      return Response.json(
+        { error: '输入验证失败', details: formatZodErrors(parsed.error) },
+        { status: 400 },
+      );
+    }
+
+    const validated = parsed.data;
+
     const demand = await createDemand({
       ownerUserId: auth.user.id,
-      title: body.title ?? '',
-      industry: body.industry ?? '',
-      budgetRange: body.budgetRange ?? '',
-      budgetMin: body.budgetMin,
-      budgetMax: body.budgetMax,
-      deliveryPeriod: body.deliveryPeriod ?? '',
-      dataTypes: body.dataTypes ?? [],
-      deploymentRequirement: body.deploymentRequirement ?? '',
-      description: body.description ?? '',
-      painPoints: body.painPoints ?? '',
-      existingSystems: body.existingSystems ?? '',
-      supportPoc: body.supportPoc ?? false,
-      allowAiSupplier: body.allowAiSupplier ?? true,
+      title: validated.title,
+      industry: validated.industry,
+      budgetRange: validated.budgetRange,
+      budgetMin: validated.budgetMin,
+      budgetMax: validated.budgetMax,
+      deliveryPeriod: validated.deliveryPeriod,
+      dataTypes: validated.dataTypes,
+      deploymentRequirement: validated.deploymentRequirement,
+      description: validated.description,
+      painPoints: validated.painPoints,
+      existingSystems: validated.existingSystems,
+      supportPoc: validated.supportPoc,
+      allowAiSupplier: validated.allowAiSupplier,
+      allowAiAutoBid: validated.allowAiAutoBid,
     });
 
     if (!demand) {
