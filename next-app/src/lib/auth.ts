@@ -1,7 +1,8 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import bcrypt from 'bcryptjs';
 
-const secretKey = process.env.JWT_SECRET || 'iwantu-platform-jwt-secret-change-in-production-2024';
+const secretKey = process.env.JWT_SECRET;
+if (!secretKey) throw new Error('JWT_SECRET environment variable is required');
 const encodedKey = new TextEncoder().encode(secretKey);
 
 interface TokenPayload {

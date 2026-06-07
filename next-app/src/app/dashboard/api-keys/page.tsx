@@ -49,7 +49,6 @@ const SCOPE_OPTIONS = [
   { value: 'write:demand', label: '写入需求 (Write Demand)', color: 'green' },
   { value: 'write:proposal', label: '写入方案 (Write Proposal)', color: 'green' },
   { value: 'write:product', label: '写入产品 (Write Product)', color: 'green' },
-  { value: 'admin', label: '管理员 (Admin)', color: 'red' },
 ] as const;
 
 /* ------------------------------------------------------------------ */

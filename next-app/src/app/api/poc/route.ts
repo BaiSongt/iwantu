@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { apiSuccess, handleApiError, corsHeaders } from '@/lib/api-utils';
 import type { UserRole } from '@/types';
 
-const ADMIN_ROLES: UserRole[] = ['admin', 'opc_team', 'operator'];
+const ADMIN_ROLES: UserRole[] = ['admin', 'operator'];
 
 /**
  * GET /api/poc — List POC projects

@@ -66,7 +66,23 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const updated = await updateProduct(id, body);
+
+    // Whitelist allowed fields — prevent mass assignment of trusted fields
+    const allowedFields = [
+      'name', 'summary', 'description', 'coverImage', 'category',
+      'industryTags', 'capabilityTags', 'deploymentModes',
+      'pricingModel', 'price', 'supportPoc', 'supportPrivateDeployment',
+      'accent', 'shot', 'tags',
+    ] as const;
+
+    const safeData: Record<string, unknown> = {};
+    for (const field of allowedFields) {
+      if (field in body) {
+        safeData[field] = body[field];
+      }
+    }
+
+    const updated = await updateProduct(id, safeData);
 
     if (!updated) {
       return NextResponse.json(

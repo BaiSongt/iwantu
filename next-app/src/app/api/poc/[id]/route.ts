@@ -5,7 +5,7 @@ import prisma from '@/lib/db/client';
 import type { UserRole } from '@/types';
 import type { PocStatus } from '@prisma/client';
 
-const ADMIN_ROLES: UserRole[] = ['admin', 'opc_team', 'operator'];
+const ADMIN_ROLES: UserRole[] = ['admin', 'operator'];
 
 /**
  * GET /api/poc/[id] — Get POC detail

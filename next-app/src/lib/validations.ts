@@ -26,7 +26,7 @@ export const registerSchema = z.object({
     .string()
     .min(6, '密码至少需要6个字符')
     .max(128, '密码不能超过128个字符'),
-  role: z.enum(['buyer', 'supplier', 'opc_team'], {
+  role: z.enum(['buyer', 'supplier'], {
     message: '请选择有效的角色',
   }),
   orgName: z.string().max(200, '组织名称不能超过200个字符').optional(),

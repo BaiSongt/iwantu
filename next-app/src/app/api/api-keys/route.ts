@@ -75,6 +75,13 @@ export async function POST(request: Request) {
       return apiSuccess({ error: '请至少选择一个权限范围' }, 400);
     }
 
+    // Scope whitelist — users cannot self-assign admin or platform scopes
+    const USER_ALLOWED_SCOPES = ['read', 'write:demand', 'write:proposal', 'write:product'];
+    const invalidScopes = scopes.filter((s: string) => !USER_ALLOWED_SCOPES.includes(s));
+    if (invalidScopes.length > 0) {
+      return apiSuccess({ error: `不允许的权限范围: ${invalidScopes.join(', ')}` }, 400);
+    }
+
     // Generate API key
     const rawKey = `iwantu_${randomBytes(32).toString('hex')}`;
 

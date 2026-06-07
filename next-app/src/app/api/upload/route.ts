@@ -10,10 +10,59 @@
 
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth-helpers';
+import prisma from '@/lib/db/client';
 import { saveFile } from '@/lib/storage';
 import { handleApiError, corsHeaders } from '@/lib/api-utils';
 import { uploadSchema, formatZodErrors } from '@/lib/validations';
 import { rateLimit, getClientIdentifier, UPLOAD_LIMIT } from '@/lib/rate-limit';
+
+/**
+ * Verify the user has permission to upload to the target resource.
+ */
+async function canUploadTo(
+  user: { id: string; orgId?: string | null; role: string },
+  targetType: string,
+  targetId: string,
+): Promise<boolean> {
+  // Admin/operator can always upload
+  if (['admin', 'operator'].includes(user.role)) return true;
+
+  try {
+    switch (targetType) {
+      case 'product': {
+        const product = await prisma.product.findUnique({
+          where: { id: targetId },
+          select: { orgId: true },
+        });
+        return product?.orgId === user.orgId;
+      }
+      case 'demand': {
+        const demand = await prisma.demand.findUnique({
+          where: { id: targetId },
+          select: { ownerUserId: true },
+        });
+        return demand?.ownerUserId === user.id;
+      }
+      case 'proposal': {
+        const proposal = await prisma.proposal.findUnique({
+          where: { id: targetId },
+          select: { supplierOrgId: true },
+        });
+        return proposal?.supplierOrgId === user.orgId;
+      }
+      case 'poc': {
+        const participant = await prisma.pocParticipant.findFirst({
+          where: { pocProjectId: targetId, userId: user.id },
+        });
+        return !!participant;
+      }
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
 
 export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
@@ -53,6 +102,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: '输入验证失败', details: formatZodErrors(parsed.error) },
         { status: 400, headers: corsHeaders() },
+      );
+    }
+
+    // Verify the user has permission to upload to this target resource
+    const allowed = await canUploadTo(auth.user, targetType!, targetId!);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: '无权向该资源上传文件' },
+        { status: 403, headers: corsHeaders() },
       );
     }
 

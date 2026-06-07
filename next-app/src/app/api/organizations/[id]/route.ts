@@ -4,6 +4,7 @@ import { apiSuccess, handleApiError } from '@/lib/api-utils';
 
 /**
  * GET /api/organizations/[id] — Get org details with members
+ * Members' emails are only visible to org members or admins.
  */
 export async function GET(
   request: Request,
@@ -11,6 +12,26 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // Check if the requester is an org member or admin
+    let isMember = false;
+    try {
+      const auth = await requireAuth(request);
+      if (!('error' in auth)) {
+        const membership = await prisma.organizationMember.findUnique({
+          where: { userId_orgId: { userId: auth.user.id, orgId: id } },
+        });
+        if (membership) isMember = true;
+        if (['admin', 'operator'].includes(auth.user.role)) isMember = true;
+      }
+    } catch {
+      // Not authenticated — isMember stays false
+    }
+
+    // If member, include full member details with email; otherwise hide email
+    const userSelect = isMember
+      ? { id: true, name: true, email: true, avatar: true }
+      : { id: true, name: true, avatar: true };
 
     const organization = await prisma.organization.findUnique({
       where: { id },
@@ -20,14 +41,7 @@ export async function GET(
             id: true,
             role: true,
             createdAt: true,
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
-              },
-            },
+            user: { select: userSelect },
           },
           orderBy: { createdAt: 'asc' },
         },

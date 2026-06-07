@@ -18,7 +18,13 @@ export async function GET(request: Request) {
     const budgetMax = searchParams.get('budgetMax');
 
     if (industry) filters.industry = industry;
-    if (status) filters.status = status;
+    if (status) {
+      filters.status = status;
+    } else {
+      // Default: only show public demands (collecting proposals)
+      // Non-public statuses require explicit status parameter + auth
+      filters.status = 'collecting_proposals';
+    }
     if (search) filters.search = search;
     if (userId) filters.ownerUserId = userId;
     if (supportPoc) filters.supportPoc = supportPoc;

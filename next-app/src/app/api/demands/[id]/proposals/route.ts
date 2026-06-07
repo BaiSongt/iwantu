@@ -6,7 +6,7 @@ import { getProposals } from '@/lib/db/proposals';
 import prisma from '@/lib/db/client';
 import type { UserRole } from '@/types';
 
-const ADMIN_ROLES: UserRole[] = ['admin', 'opc_team', 'operator'];
+const ADMIN_ROLES: UserRole[] = ['admin', 'operator'];
 
 export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });

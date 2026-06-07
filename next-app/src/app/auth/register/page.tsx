@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Mail, Lock, UserPlus, Loader2, Building2, ShoppingCart, Users } from 'lucide-react';
+import { User, Mail, Lock, UserPlus, Loader2, Building2, ShoppingCart } from 'lucide-react';
 import { registerAction } from '@/lib/session';
 
 const ROLES = [
@@ -18,12 +18,6 @@ const ROLES = [
     label: '供应商',
     description: '发布AI产品，响应需求并提供解决方案',
     icon: Building2,
-  },
-  {
-    value: 'opc_team',
-    label: 'OPC团队',
-    description: '协助需求匹配、POC验证和采购沟通',
-    icon: Users,
   },
 ] as const;
 

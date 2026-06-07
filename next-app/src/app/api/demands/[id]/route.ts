@@ -4,7 +4,7 @@ import { apiSuccess, handleApiError } from '@/lib/api-utils';
 import type { UserRole } from '@/types';
 
 /** Roles that can bypass ownership checks. */
-const ADMIN_ROLES: UserRole[] = ['admin', 'opc_team', 'operator'];
+const ADMIN_ROLES: UserRole[] = ['admin', 'operator'];
 
 /** Valid status transitions: from -> set of allowed to. */
 const STATUS_TRANSITIONS: Record<string, Set<string>> = {

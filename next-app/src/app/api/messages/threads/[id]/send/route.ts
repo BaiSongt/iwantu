@@ -1,4 +1,5 @@
 import { requireAuth } from '@/lib/auth-helpers';
+import prisma from '@/lib/db/client';
 import { sendMessage } from '@/lib/db/messages';
 import { apiSuccess, handleApiError } from '@/lib/api-utils';
 
@@ -11,6 +12,18 @@ export async function POST(
     if ('error' in auth) return auth.error;
 
     const { id: threadId } = await params;
+
+    // Verify the user is a participant of this thread
+    const participant = await prisma.threadParticipant.findUnique({
+      where: { threadId_userId: { threadId, userId: auth.user.id } },
+    });
+    if (!participant) {
+      return Response.json(
+        { error: '无权在此会话中发送消息' },
+        { status: 403 },
+      );
+    }
+
     const body = await request.json();
     const { content, isAiGenerated } = body;
 

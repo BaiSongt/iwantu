@@ -6,7 +6,7 @@ import { updateDemandStatus } from '@/lib/db/demands';
 import prisma from '@/lib/db/client';
 import type { UserRole } from '@/types';
 
-const ADMIN_ROLES: UserRole[] = ['admin', 'opc_team', 'operator'];
+const ADMIN_ROLES: UserRole[] = ['admin', 'operator'];
 
 /** Valid status transitions for proposals. */
 const PROPOSAL_TRANSITIONS: Record<string, Set<string>> = {
@@ -115,14 +115,14 @@ export async function PUT(
     // --- Case 1: Supplier saving quote items / milestones ---
     const isSupplier = auth.user.orgId === proposal.supplierId;
     if (isSupplier && (body.quoteItems !== undefined || body.milestones !== undefined)) {
-      // Supplier can save quote items and milestones
+      // Supplier can save content only — status changes go through Case 2
+      const { status: _forbiddenStatus, ...supplierData } = body;
       const updated = await updateProposalWithQuoteItems(id, {
-        quoteItems: body.quoteItems,
-        milestones: body.milestones,
-        price: body.price,
-        scope: body.scope,
-        deliveryPeriod: body.deliveryPeriod,
-        status: body.status,
+        quoteItems: supplierData.quoteItems,
+        milestones: supplierData.milestones,
+        price: supplierData.price,
+        scope: supplierData.scope,
+        deliveryPeriod: supplierData.deliveryPeriod,
       });
 
       if (!updated) {
