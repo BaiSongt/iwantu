@@ -22,9 +22,7 @@ services:
       - iwantu-network
 
   app:
-    build:
-      context: ./next-app
-      dockerfile: Dockerfile
+    image: iwantu-app:latest
     container_name: iwantu-app
     restart: unless-stopped
     depends_on:
@@ -32,13 +30,31 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://iwantu:iwantu123@postgres:5432/iwantu
+      JWT_SECRET: iwantu-platform-jwt-secret-change-in-production-2024
+      NODE_ENV: production
+      UPLOAD_DIR: /data/uploads
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@iwantu.com}
     ports:
       - "3000:3000"
+    volumes:
+      - uploads_data:/data/uploads
     networks:
       - iwantu-network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:
