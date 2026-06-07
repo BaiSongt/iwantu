@@ -1,9 +1,17 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import bcrypt from 'bcryptjs';
 
-const secretKey = process.env.JWT_SECRET;
-if (!secretKey) throw new Error('JWT_SECRET environment variable is required');
-const encodedKey = new TextEncoder().encode(secretKey);
+// Lazy-load the key so the build doesn't fail without JWT_SECRET.
+// The error is thrown at runtime on first use instead.
+let _encodedKey: Uint8Array | null = null;
+function getEncodedKey(): Uint8Array {
+  if (!_encodedKey) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET environment variable is required');
+    _encodedKey = new TextEncoder().encode(secret);
+  }
+  return _encodedKey;
+}
 
 interface TokenPayload {
   userId: string;
@@ -18,12 +26,12 @@ export async function signToken(payload: TokenPayload): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
-    .sign(encodedKey);
+    .sign(getEncodedKey());
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, encodedKey, {
+    const { payload } = await jwtVerify(token, getEncodedKey(), {
       algorithms: ['HS256'],
     });
     return payload;

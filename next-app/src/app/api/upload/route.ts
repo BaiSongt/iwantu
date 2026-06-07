@@ -106,8 +106,8 @@ export async function POST(request: Request) {
     }
 
     // Verify the user has permission to upload to this target resource
-    const allowed = await canUploadTo(auth.user, targetType!, targetId!);
-    if (!allowed) {
+    const hasPermission = await canUploadTo(auth.user, targetType!, targetId!);
+    if (!hasPermission) {
       return NextResponse.json(
         { error: '无权向该资源上传文件' },
         { status: 403, headers: corsHeaders() },
