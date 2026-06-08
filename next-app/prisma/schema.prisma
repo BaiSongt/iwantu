@@ -129,6 +129,10 @@ enum FeaturedItemType {
   team
 }
 
+enum VerificationPurpose {
+  register
+}
+
 // ============================================
 // Models
 // ============================================
@@ -593,4 +597,20 @@ model Notification {
   @@index([userId, read])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+model EmailVerificationCode {
+  id          String              @id @default(cuid())
+  email       String
+  codeHash    String
+  purpose     VerificationPurpose @default(register)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attempts    Int                 @default(0)
+  createdAt   DateTime            @default(now())
+
+  @@index([email])
+  @@index([email, purpose])
+  @@index([expiresAt])
+  @@map("email_verification_codes")
 }

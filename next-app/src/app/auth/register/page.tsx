@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Mail, Lock, UserPlus, Loader2, Building2, ShoppingCart } from 'lucide-react';
+import { User, Mail, Lock, UserPlus, Loader2, Building2, ShoppingCart, ShieldCheck } from 'lucide-react';
 import { registerAction } from '@/lib/session';
 
 const ROLES = [
@@ -29,16 +29,60 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('buyer');
   const [orgName, setOrgName] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [message, setMessage] = useState('');
+
+  // Countdown timer for resend cooldown
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const handleSendCode = useCallback(async () => {
+    // Basic email format check before sending
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('请输入有效的邮箱地址');
+      return;
+    }
+
+    setError('');
+    setMessage('');
+    setSendingCode(true);
+
+    try {
+      const res = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setMessage('验证码已发送，请查收邮箱');
+        setCountdown(60);
+      } else {
+        setError(data.error || '发送失败');
+      }
+    } catch {
+      setError('网络错误，请稍后重试');
+    } finally {
+      setSendingCode(false);
+    }
+  }, [email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setMessage('');
     setLoading(true);
 
     try {
-      const result = await registerAction(name, email, password, role, orgName || undefined);
+      const result = await registerAction(name, email, password, role, code, orgName || undefined);
       if (result.success) {
         router.push('/');
         router.refresh();
@@ -76,6 +120,12 @@ export default function RegisterPage() {
           </div>
         )}
 
+        {message && (
+          <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-600">
+            {message}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
@@ -107,11 +157,45 @@ export default function RegisterPage() {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); setError(''); setMessage(''); }}
                 placeholder="your@email.com"
                 required
                 className="w-full rounded-lg border border-line bg-white pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted/60 outline-none transition-all duration-160 focus:border-primary focus:ring-2 focus:ring-primary/10"
               />
+            </div>
+          </div>
+
+          {/* Verification Code */}
+          <div>
+            <label htmlFor="code" className="block text-sm font-medium text-foreground mb-1.5">
+              邮箱验证码
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+                <input
+                  id="code"
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6位数字验证码"
+                  required
+                  maxLength={6}
+                  className="w-full rounded-lg border border-line bg-white pl-10 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted/60 outline-none transition-all duration-160 focus:border-primary focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={sendingCode || countdown > 0}
+                className="shrink-0 rounded-lg border border-primary bg-white px-4 py-2.5 text-sm font-medium text-primary transition-all duration-160 hover:bg-[#eff6ff] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+              >
+                {sendingCode
+                  ? '发送中...'
+                  : countdown > 0
+                    ? `${countdown}s 后重发`
+                    : '发送验证码'}
+              </button>
             </div>
           </div>
 

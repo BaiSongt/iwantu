@@ -157,3 +157,29 @@ export async function sendWelcomeEmail(
 
   return sendEmail(to, '欢迎加入 iWantU', html);
 }
+
+/**
+ * Send a 6-digit email verification code for registration.
+ */
+export async function sendVerificationCodeEmail(
+  to: string,
+  code: string,
+): Promise<boolean> {
+  const html = baseHtmlWrapper(`
+    <p style="margin:0 0 16px;">您好，</p>
+    <p style="margin:0 0 16px;">
+      您正在注册 <strong>iWantU</strong> 平台账号，验证码为：
+    </p>
+    <p style="margin:0 0 24px;font-size:32px;font-weight:700;letter-spacing:6px;color:#155AEF;text-align:center;padding:16px 0;background:#eff6ff;border-radius:8px;">
+      ${code}
+    </p>
+    <p style="margin:0 0 8px;color:#475569;">
+      验证码 <strong>10 分钟内有效</strong>，请尽快使用。
+    </p>
+    <p style="margin:0 0 0;color:#94a3b8;font-size:13px;">
+      如果这不是您的操作，请忽略此邮件。
+    </p>
+  `);
+
+  return sendEmail(to, '[iWantU] 注册验证码', html);
+}

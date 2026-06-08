@@ -30,6 +30,7 @@ export const registerSchema = z.object({
     message: '请选择有效的角色',
   }),
   orgName: z.string().max(200, '组织名称不能超过200个字符').optional(),
+  code: z.string().regex(/^\d{6}$/, '请输入6位数字验证码'),
 });
 
 // ---------------------------------------------------------------------------

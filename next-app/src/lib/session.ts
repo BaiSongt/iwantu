@@ -6,6 +6,8 @@ import prisma from '@/lib/db/client';
 import type { User, UserRole } from '@/types';
 import { loginSchema, registerSchema, formatZodErrors } from '@/lib/validations';
 import { rateLimit } from '@/lib/rate-limit';
+import { verifyEmailCode } from '@/lib/email-verification';
+import { sendWelcomeEmail } from '@/lib/email';
 
 // ---- Session helpers ----
 
@@ -84,11 +86,12 @@ export async function registerAction(
   email: string,
   password: string,
   role: string,
+  code: string,
   orgName?: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Input validation with Zod
-    const parsed = registerSchema.safeParse({ name, email, password, role, orgName });
+    const parsed = registerSchema.safeParse({ name, email, password, role, code, orgName });
     if (!parsed.success) {
       const errors = formatZodErrors(parsed.error);
       return { success: false, error: Object.values(errors)[0] || '输入验证失败' };
@@ -107,6 +110,12 @@ export async function registerAction(
       return { success: false, error: '该邮箱已被注册' };
     }
 
+    // Verify email code
+    const codeResult = await verifyEmailCode(validated.email, validated.code);
+    if (!codeResult.success) {
+      return { success: false, error: codeResult.error || '验证码校验失败' };
+    }
+
     const passwordHash = await hashPassword(validated.password);
 
     // Determine org type from user role
@@ -121,6 +130,7 @@ export async function registerAction(
             email: validated.email,
             passwordHash,
             role: validated.role as UserRole,
+            emailVerified: new Date(),
           },
         });
 
@@ -161,6 +171,7 @@ export async function registerAction(
           email: validated.email,
           passwordHash,
           role: validated.role as UserRole,
+          emailVerified: new Date(),
         },
       });
 
@@ -172,6 +183,9 @@ export async function registerAction(
         orgId: newUser.orgId ?? undefined,
       });
     }
+
+    // Send welcome email (fire-and-forget, do not block registration)
+    sendWelcomeEmail(validated.email, validated.name).catch(() => {});
 
     return { success: true };
   } catch {

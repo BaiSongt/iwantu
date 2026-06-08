@@ -99,11 +99,12 @@ DATABASE_URL=postgresql://iwantu:<强密码>@postgres:5432/iwantu
 # JWT 密钥（务必使用随机生成的强密钥）
 JWT_SECRET=$(openssl rand -base64 32)
 
-# SMTP（可选，用于邮件通知）
+# SMTP（注册验证码功能依赖此项，必须配置）
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=noreply@yourdomain.com
 SMTP_PASS=<smtp-password>
+EMAIL_FROM="iWantU <noreply@yourdomain.com>"
 
 # 环境
 NODE_ENV=production
@@ -128,11 +129,12 @@ openssl rand -base64 16
 
 确认 `docker-compose.yml` 中的配置正确。默认配置如下：
 
+- `app` 服务从本地源码构建（`./next-app/Dockerfile`），构建后的镜像标记为 `iwantu-app:latest`
 - PostgreSQL 数据持久化到 Docker Volume
 - Next.js 应用多阶段构建
 - 健康检查确保服务可用
 
-启动服务：
+启动服务（从本地源码构建并启动，无需远程镜像）：
 
 ```bash
 cd /opt/iwantu
@@ -152,7 +154,28 @@ docker compose logs -f postgres
 
 ---
 
-## 4. 数据库初始化
+## 4. 注册验证码（SMTP 配置）
+
+注册流程使用邮箱验证码确认用户身份。**此功能依赖 SMTP 配置，部署时必须正确设置以下环境变量：**
+
+| 变量 | 说明 |
+|------|------|
+| `SMTP_HOST` | SMTP 服务器地址（如 `smtp.qq.com`、`smtp.gmail.com`） |
+| `SMTP_PORT` | SMTP 端口（通常 `587` 为 STARTTLS，`465` 为 SSL） |
+| `SMTP_USER` | SMTP 登录用户名 |
+| `SMTP_PASS` | SMTP 登录密码或授权码 |
+| `EMAIL_FROM` | 发件人地址，格式 `"iWantU <noreply@your-domain.com>"` |
+
+验证码特性：
+
+- 6 位随机数字，10 分钟内有效
+- 每个验证码最多尝试 5 次
+- 同一邮箱 60 秒内只能发送一次
+- 验证码以 HMAC-SHA256 哈希存储，不明文入库
+
+---
+
+## 5. 数据库初始化
 
 ### 首次部署
 
@@ -174,7 +197,7 @@ docker compose exec app npx prisma migrate deploy
 
 ---
 
-## 5. SSL 证书配置 (Let's Encrypt)
+## 6. SSL 证书配置 (Let's Encrypt)
 
 ### 安装 Certbot
 
@@ -205,7 +228,7 @@ sudo certbot renew --dry-run
 
 ---
 
-## 6. Nginx 配置
+## 7. Nginx 配置
 
 ### 安装 Nginx
 
@@ -305,7 +328,7 @@ sudo systemctl enable nginx
 
 ---
 
-## 7. 备份策略
+## 8. 备份策略
 
 ### 数据库备份脚本
 
@@ -357,7 +380,7 @@ gunzip -c /opt/backups/iwantu_db_YYYYMMDD_HHMMSS.sql.gz | \
 
 ---
 
-## 8. 监控设置
+## 9. 监控设置
 
 ### 健康检查
 
@@ -400,7 +423,7 @@ docker system prune -a --volumes
 
 ---
 
-## 9. 更新流程
+## 10. 更新流程
 
 ### 代码更新
 
@@ -441,7 +464,7 @@ gunzip -c /opt/backups/iwantu_db_<timestamp>.sql.gz | \
 
 ---
 
-## 10. 安全建议
+## 11. 安全建议
 
 ### 防火墙配置
 
