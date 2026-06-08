@@ -126,16 +126,10 @@ export async function requireScope(
 
   const scopes = auth.scopes;
 
-  // Direct match
+  // Direct match — no wildcards; each scope must be explicitly granted
   if (scopes.includes(scope)) return auth;
 
-  // Wildcard: "admin" scope grants everything
-  if (scopes.includes('admin')) return auth;
-
-  // Wildcard: "write:*" matches any "write:xxx"
-  if (scope.startsWith('write:') && scopes.includes('write:*')) return auth;
-
-  // Wildcard: "read" scope covers all read operations
+  // "read" scope also covers all read operations
   if (scope === 'read' && scopes.includes('read')) return auth;
 
   return {

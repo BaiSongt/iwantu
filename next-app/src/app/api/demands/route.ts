@@ -19,10 +19,15 @@ export async function GET(request: Request) {
 
     if (industry) filters.industry = industry;
     if (status) {
+      // Non-public statuses require authentication
+      const publicStatuses = ['collecting_proposals', 'in_poc'];
+      if (!publicStatuses.includes(status)) {
+        const auth = await requireAuth(request);
+        if ('error' in auth) return auth.error;
+      }
       filters.status = status;
     } else {
       // Default: only show public demands (collecting proposals)
-      // Non-public statuses require explicit status parameter + auth
       filters.status = 'collecting_proposals';
     }
     if (search) filters.search = search;

@@ -207,9 +207,13 @@ async function handleTool(
 
     // -- Proposal tools --
     case 'submit_proposal': {
+      // supplierOrgId must come from the authenticated user's org — never from params
+      if (!auth.user.orgId) {
+        throw new Error('提交方案需要供应商组织身份，请确认账户已关联供应商组织');
+      }
       const proposal = await createProposal({
         demandId: params.demandId as string,
-        supplierOrgId: auth.user.orgId ?? (params.supplierOrgId as string),
+        supplierOrgId: auth.user.orgId,
         title: params.title as string,
         scope: (params.scope ?? '') as string,
         price: params.price as number,

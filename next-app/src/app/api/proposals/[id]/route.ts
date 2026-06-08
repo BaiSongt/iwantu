@@ -178,18 +178,42 @@ export async function PUT(
       );
     }
 
-    // Update proposal status
+    // Update proposal status — wrap in transaction if accepting
+    if (newStatus === 'accepted') {
+      // Transaction: accept proposal + transition demand atomically
+      const txResult = await prisma.$transaction(async (tx) => {
+        const updatedProposal = await tx.proposal.update({
+          where: { id },
+          data: { status: newStatus },
+        });
+
+        await tx.demand.update({
+          where: { id: proposal.demandId },
+          data: { status: 'in_poc' },
+        });
+
+        return updatedProposal;
+      });
+
+      const org = await prisma.organization.findUnique({
+        where: { id: proposal.supplierId },
+        select: { name: true, logo: true },
+      });
+
+      return apiSuccess({
+        ...txResult,
+        status: txResult.status,
+        supplierOrgName: org?.name ?? '未知供应商',
+        supplierOrgLogo: org?.logo ?? null,
+      });
+    }
+
     const updated = await updateProposalStatus(id, newStatus);
     if (!updated) {
       return NextResponse.json(
         { error: '更新提案状态失败' },
         { status: 500, headers: corsHeaders() },
       );
-    }
-
-    // If accepted, transition demand to 'in_poc'
-    if (newStatus === 'accepted') {
-      await updateDemandStatus(proposal.demandId, 'in_poc');
     }
 
     // Enrich with supplier org info

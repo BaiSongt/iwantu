@@ -21,10 +21,16 @@ import { jwtVerify } from 'jose';
 
 const SESSION_COOKIE = 'iwantu_session';
 
-const secretKey =
-  process.env.JWT_SECRET ||
-  'iwantu-platform-jwt-secret-change-in-production-2024';
-const encodedKey = new TextEncoder().encode(secretKey);
+// Lazy-load to avoid build-time crash — error thrown at runtime if missing
+let _encodedKey: Uint8Array | null = null;
+function getEncodedKey(): Uint8Array {
+  if (!_encodedKey) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET environment variable is required');
+    _encodedKey = new TextEncoder().encode(secret);
+  }
+  return _encodedKey;
+}
 
 // ---------------------------------------------------------------------------
 // Security headers applied to every response
@@ -58,7 +64,7 @@ async function verifySessionToken(
   token: string,
 ): Promise<MiddlewareTokenPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, encodedKey, {
+    const { payload } = await jwtVerify(token, getEncodedKey(), {
       algorithms: ['HS256'],
     });
     return payload as unknown as MiddlewareTokenPayload;
