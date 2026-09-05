@@ -167,6 +167,51 @@ enum CapabilityClaimStatus {
   verified
 }
 
+// v2 Economy & Ledger domain enums.
+enum LedgerAccountType {
+  principal_available
+  principal_locked
+  principal_pending
+  system_reserve
+  system_clearing
+  system_fee
+  system_incentive
+}
+
+enum LedgerAccountStatus {
+  active
+  frozen
+  closed
+}
+
+enum LedgerTransactionType {
+  genesis
+  purchased_credit
+  contract_escrow
+  settlement
+  refund
+  protocol_fee
+  incentive
+  penalty
+  reserve
+}
+
+enum LedgerTransactionStatus {
+  draft
+  posted
+}
+
+enum LedgerEntrySide {
+  debit
+  credit
+}
+
+enum EscrowStatus {
+  locked
+  released
+  refunded
+}
+
 // ============================================
 // Models
 // ============================================
@@ -256,6 +301,7 @@ model Principal {
   agents             AgentIdentity[]
   issuedMandates     Mandate[]           @relation("MandateIssuerPrincipal")
   mandateRevocations MandateRevocation[] @relation("MandateRevokedByPrincipal")
+  ledgerAccounts     LedgerAccount[]
 
   @@index([type, status])
   @@map("principals")
@@ -353,13 +399,13 @@ model Mandate {
   supersedesMandateId       String?  @unique
   createdAt                 DateTime @default(now())
 
-  issuerPrincipal  Principal     @relation("MandateIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
-  subjectAgent     AgentIdentity @relation("MandateSubjectAgent", fields: [subjectAgentIdentityId], references: [id], onDelete: Restrict)
+  issuerPrincipal  Principal      @relation("MandateIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
+  subjectAgent     AgentIdentity  @relation("MandateSubjectAgent", fields: [subjectAgentIdentityId], references: [id], onDelete: Restrict)
   delegatingAgent  AgentIdentity? @relation("MandateDelegatingAgent", fields: [delegatingAgentIdentityId], references: [id], onDelete: Restrict)
-  parentMandate    Mandate?      @relation("MandateDelegation", fields: [parentMandateId], references: [id], onDelete: Restrict)
-  childDelegations Mandate[]     @relation("MandateDelegation")
-  supersedes       Mandate?      @relation("MandateSupersession", fields: [supersedesMandateId], references: [id], onDelete: Restrict)
-  supersededBy     Mandate?      @relation("MandateSupersession")
+  parentMandate    Mandate?       @relation("MandateDelegation", fields: [parentMandateId], references: [id], onDelete: Restrict)
+  childDelegations Mandate[]      @relation("MandateDelegation")
+  supersedes       Mandate?       @relation("MandateSupersession", fields: [supersedesMandateId], references: [id], onDelete: Restrict)
+  supersededBy     Mandate?       @relation("MandateSupersession")
   revocation       MandateRevocation?
 
   @@unique([mandateFamilyId, version])
@@ -468,6 +514,96 @@ model AgentMarketProfile {
 
   @@index([availability, acceptsPublicTasks])
   @@map("agent_market_profiles")
+}
+
+// ============================================
+// v2 Economy & Ledger Foundation (M2-01)
+// ============================================
+
+model LedgerAccount {
+  id          String              @id @default(cuid())
+  principalId String?
+  type        LedgerAccountType
+  status      LedgerAccountStatus @default(active)
+  currency    String              @default("IWC")
+  createdAt   DateTime            @default(now())
+  closedAt    DateTime?
+
+  principal    Principal?   @relation(fields: [principalId], references: [id], onDelete: Restrict)
+  entries      LedgerEntry[]
+  buyerEscrows Escrow[]     @relation("EscrowBuyerAccount")
+
+  @@unique([principalId, type, currency])
+  @@index([principalId, status])
+  @@index([type, status])
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id              String                  @id @default(cuid())
+  type            LedgerTransactionType
+  status          LedgerTransactionStatus @default(draft)
+  referenceType   String
+  referenceId     String
+  idempotencyKey  String                  @unique
+  metadata        Json?
+  previousHash    String?
+  transactionHash String?                 @unique
+  createdAt       DateTime                @default(now())
+  postedAt        DateTime?
+
+  entries        LedgerEntry[]
+  escrowLocks    Escrow[]      @relation("EscrowLockTransaction")
+  escrowReleases Escrow[]      @relation("EscrowReleaseTransaction")
+  escrowRefunds  Escrow[]      @relation("EscrowRefundTransaction")
+
+  @@index([referenceType, referenceId])
+  @@index([type, status, createdAt])
+  @@index([previousHash])
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id            String          @id @default(cuid())
+  transactionId String
+  entryIndex    Int
+  accountId     String
+  side          LedgerEntrySide
+  amount        Decimal         @db.Decimal(36, 8)
+  provenance    Json?
+  createdAt     DateTime        @default(now())
+
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account     LedgerAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, entryIndex])
+  @@index([accountId, createdAt])
+  @@index([transactionId, side])
+  @@map("ledger_entries")
+}
+
+model Escrow {
+  id                         String       @id @default(cuid())
+  contractId                 String       @unique
+  buyerAccountId             String
+  amount                     Decimal      @db.Decimal(36, 8)
+  currency                   String       @default("IWC")
+  status                     EscrowStatus @default(locked)
+  lockLedgerTransactionId    String       @unique
+  releaseLedgerTransactionId String?      @unique
+  refundLedgerTransactionId  String?      @unique
+  createdAt                  DateTime     @default(now())
+  releasedAt                 DateTime?
+  refundedAt                 DateTime?
+
+  buyerAccount             LedgerAccount      @relation("EscrowBuyerAccount", fields: [buyerAccountId], references: [id], onDelete: Restrict)
+  lockLedgerTransaction    LedgerTransaction  @relation("EscrowLockTransaction", fields: [lockLedgerTransactionId], references: [id], onDelete: Restrict)
+  releaseLedgerTransaction LedgerTransaction? @relation("EscrowReleaseTransaction", fields: [releaseLedgerTransactionId], references: [id], onDelete: Restrict)
+  refundLedgerTransaction  LedgerTransaction? @relation("EscrowRefundTransaction", fields: [refundLedgerTransactionId], references: [id], onDelete: Restrict)
+
+  @@index([buyerAccountId, status])
+  @@index([status, createdAt])
+  @@map("escrows")
 }
 
 model Product {
