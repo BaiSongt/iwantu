@@ -67,13 +67,19 @@ async function getSystemAccount(type) {
   }
 }
 
-async function createDraftTransaction(type, label, metadata = undefined) {
+async function createDraftTransaction(
+  type,
+  label,
+  metadata = undefined,
+  referenceType = 'invariant_test',
+  referenceId = undefined,
+) {
   const suffix = unique(label);
   return prisma.ledgerTransaction.create({
     data: {
       type,
-      referenceType: 'invariant_test',
-      referenceId: suffix,
+      referenceType,
+      referenceId: referenceId ?? suffix,
       idempotencyKey: `idem:${suffix}`,
       ...(metadata === undefined ? {} : { metadata }),
     },
@@ -103,8 +109,22 @@ async function postTransaction(transactionId, transactionHash = nextHash()) {
   });
 }
 
-async function createBalancedPostedTransaction(type, label, debitAccountId, creditAccountId, amount = '10.00000000') {
-  const transaction = await createDraftTransaction(type, label);
+async function createBalancedPostedTransaction(
+  type,
+  label,
+  debitAccountId,
+  creditAccountId,
+  amount = '10.00000000',
+  referenceType = 'invariant_test',
+  referenceId = undefined,
+) {
+  const transaction = await createDraftTransaction(
+    type,
+    label,
+    undefined,
+    referenceType,
+    referenceId,
+  );
   const debit = await appendEntry(transaction.id, 0, debitAccountId, 'debit', amount);
   const credit = await appendEntry(transaction.id, 1, creditAccountId, 'credit', amount);
   const posted = await postTransaction(transaction.id);
@@ -260,15 +280,22 @@ test('M2-01: balanced transaction posts exactly once and becomes immutable with 
   );
 });
 
-test('M2-01: escrow requires posted lock evidence and supports only one terminal transition', async () => {
+test('M2-01: escrow requires exact posted lock evidence and supports only one terminal transition', async () => {
   const fixture = await createPrincipalFixture('escrow');
   const clearing = await getSystemAccount('system_clearing');
+  const draftContractId = unique('contract-draft-lock');
 
-  const draftLock = await createDraftTransaction('contract_escrow', 'escrow-draft-lock');
+  const draftLock = await createDraftTransaction(
+    'contract_escrow',
+    'escrow-draft-lock',
+    undefined,
+    'escrow_lock',
+    draftContractId,
+  );
   await assert.rejects(
     prisma.escrow.create({
       data: {
-        contractId: unique('contract-draft-lock'),
+        contractId: draftContractId,
         buyerAccountId: fixture.available.id,
         amount: '10',
         lockLedgerTransactionId: draftLock.id,
@@ -276,12 +303,15 @@ test('M2-01: escrow requires posted lock evidence and supports only one terminal
     }),
   );
 
+  const contractId = unique('contract');
   const lock = await createBalancedPostedTransaction(
     'contract_escrow',
     'escrow-lock',
     fixture.available.id,
-    clearing.id,
+    fixture.locked.id,
     '10',
+    'escrow_lock',
+    contractId,
   );
 
   await assert.rejects(
@@ -297,7 +327,7 @@ test('M2-01: escrow requires posted lock evidence and supports only one terminal
 
   const escrow = await prisma.escrow.create({
     data: {
-      contractId: unique('contract'),
+      contractId,
       buyerAccountId: fixture.available.id,
       amount: '10',
       lockLedgerTransactionId: lock.transaction.id,
@@ -308,9 +338,11 @@ test('M2-01: escrow requires posted lock evidence and supports only one terminal
   const release = await createBalancedPostedTransaction(
     'settlement',
     'escrow-release',
-    clearing.id,
+    fixture.locked.id,
     fixture.available.id,
     '10',
+    'escrow_release',
+    contractId,
   );
 
   const released = await prisma.escrow.update({
@@ -326,9 +358,11 @@ test('M2-01: escrow requires posted lock evidence and supports only one terminal
   const refund = await createBalancedPostedTransaction(
     'refund',
     'escrow-refund-after-release',
-    clearing.id,
+    fixture.locked.id,
     fixture.available.id,
     '10',
+    'escrow_refund',
+    contractId,
   );
 
   await assert.rejects(
