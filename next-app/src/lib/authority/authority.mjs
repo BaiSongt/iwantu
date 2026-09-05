@@ -517,6 +517,8 @@ export async function createDelegatedMandate(prisma, input) {
     parentMandateId: parent.id,
     delegatingAgentIdentityId: parent.subjectAgentIdentityId,
     delegationDepth: parent.delegationDepth + 1,
+    delegationAllowed: false,
+    maxDelegationDepth: 0,
     principalStatus: parent.issuerPrincipal.status,
     subjectAgentStatus: subjectAgent.status,
     revokedAt: null,
