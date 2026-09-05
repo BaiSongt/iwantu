@@ -47,6 +47,11 @@ async function fundPrincipal(fixture, amount = '100') {
   });
 }
 
+function fixedLedgerBalance(value) {
+  const [integer, fraction = ''] = String(value ?? '0').split('.');
+  return `${integer}.${fraction.padEnd(8, '0').slice(0, 8)}`;
+}
+
 async function accountBalance(accountId) {
   const rows = await prisma.$queryRaw(
     Prisma.sql`
@@ -59,7 +64,7 @@ async function accountBalance(accountId) {
         AND t."status" = 'posted'
     `,
   );
-  return rows[0]?.balance ?? '0.00000000';
+  return fixedLedgerBalance(rows[0]?.balance);
 }
 
 async function transactionCount(referenceType, referenceId) {
