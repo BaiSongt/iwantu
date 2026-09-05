@@ -294,7 +294,7 @@ async function attemptAtomicPosting(prisma, normalized, expectedHash) {
           referenceType: normalized.referenceType,
           referenceId: normalized.referenceId,
           idempotencyKey: normalized.idempotencyKey,
-          metadata: normalized.metadata,
+          ...(normalized.metadata === null ? {} : { metadata: normalized.metadata }),
         },
       });
 
@@ -305,7 +305,7 @@ async function attemptAtomicPosting(prisma, normalized, expectedHash) {
           accountId: entry.accountId,
           side: entry.side,
           amount: entry.amount,
-          provenance: entry.provenance,
+          ...(entry.provenance === null ? {} : { provenance: entry.provenance }),
         })),
       });
 
