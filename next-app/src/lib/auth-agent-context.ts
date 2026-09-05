@@ -7,25 +7,24 @@ import {
   classifyAgentBearerToken,
   createLegacyAgentAuthenticationContext,
   createV2AgentAuthenticationContext,
-  type AuthenticatedAuthorityContext,
-  type UnifiedAgentAuthenticationContext,
 } from '@/lib/agent-auth-context-core.mjs';
+import type {
+  AuthenticatedAuthorityContext,
+  AuthenticatedAuthorityRequest,
+  LegacyAgentAuthenticationContext,
+  UnifiedAgentAuthenticationContext,
+  V2AgentAuthenticationContext,
+} from '@/lib/agent-auth-context-types';
 import {
   AuthorityResolutionError,
   resolveAuthority,
-  type AuthorityRequest,
 } from '@/lib/authority/authority.mjs';
 
 export type UnifiedAgentAuthResult =
   | UnifiedAgentAuthenticationContext
   | { error: Response };
 
-export type AuthenticatedAuthorityRequest = Omit<
-  AuthorityRequest,
-  'subjectAgentIdentityId'
-> & {
-  subjectAgentIdentityId?: string;
-};
+export type { AuthenticatedAuthorityRequest };
 
 function errorResponse(message: string, status: number) {
   return { error: Response.json({ error: message }, { status }) };
@@ -58,13 +57,15 @@ export async function authenticateAgentContext(
   if (credentialFamily === 'v2_agent_credential') {
     const auth = await authenticateV2Agent(request);
     if ('error' in auth) return auth;
-    return createV2AgentAuthenticationContext(auth);
+    return createV2AgentAuthenticationContext(auth) as V2AgentAuthenticationContext;
   }
 
   if (credentialFamily === 'legacy_user_api_key') {
     const auth = await authenticateAgent(request);
     if ('error' in auth) return auth;
-    return createLegacyAgentAuthenticationContext(auth);
+    return createLegacyAgentAuthenticationContext(
+      auth,
+    ) as LegacyAgentAuthenticationContext;
   }
 
   return errorResponse('无法识别的 Agent Credential 格式', 401);
@@ -109,7 +110,10 @@ export async function resolveAuthenticatedAgentAuthority(
       subjectAgentIdentityId: authentication.agent.id,
     });
 
-    return bindAuthorityToAuthentication(authentication, authority);
+    return bindAuthorityToAuthentication(
+      authentication,
+      authority,
+    ) as AuthenticatedAuthorityContext;
   } catch (error) {
     if (
       error instanceof AuthorityResolutionError ||
