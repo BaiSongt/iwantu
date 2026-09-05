@@ -56,9 +56,9 @@ Core invariants:
 
 ### M2 work sequence
 
-- V2-M2-01 — Ledger schema & accounting invariants — **COMPLETE** (`master` at/after `75986d9e`)
-- V2-M2-02 — Atomic posting engine — **ACTIVE**
-- V2-M2-03 — Credit provenance & account bootstrap — NOT STARTED
+- V2-M2-01 — Ledger schema & accounting invariants — **COMPLETE** (`75986d9e`)
+- V2-M2-02 — Atomic posting engine — **COMPLETE** (`fb489b51`)
+- V2-M2-03 — Credit provenance & account bootstrap — **ACTIVE**
 - V2-M2-04 — Escrow primitives — NOT STARTED
 - V2-M2-05 — Ledger integrity / concurrency gate — NOT STARTED
 
@@ -79,6 +79,19 @@ normalize + validate
 ```
 
 M2-02 deliberately does not claim a global transaction hash chain. `previousHash` remains unset by the posting engine until M2-05 introduces a serialized chain-head/concurrency invariant. This avoids creating a hash chain that can fork under concurrent writes.
+
+### V2-M2-03 boundary
+
+M2-03 establishes:
+
+- three Principal-owned IWC accounts: Available / Locked / Pending;
+- four platform system accounts: Reserve / Clearing / Fee / Incentive;
+- structured `iwantu-credit-provenance/0.1` metadata for Genesis, Purchased, Earned, Incentive and Refund origins;
+- one Genesis allocation chain per Principal/allocation version;
+- Purchased Credit idempotency keyed by the external purchase reference;
+- a finite Protocol Incentive system pool funded from Reserve.
+
+M2-03 does not add a P2P transfer API and does not allow an Agent to own a LedgerAccount. Genesis and Purchased Credit are the controlled issuance paths implemented in this phase. Protocol Incentive awards to a Principal remain deferred until M2-05 can enforce an atomic no-overdraft invariant against the finite Incentive pool under concurrent writers.
 
 ## M3 — Task / Offer Protocol — NOT STARTED
 
