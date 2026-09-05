@@ -58,8 +58,8 @@ Core invariants:
 
 - V2-M2-01 — Ledger schema & accounting invariants — **COMPLETE** (`75986d9e`)
 - V2-M2-02 — Atomic posting engine — **COMPLETE** (`fb489b51`)
-- V2-M2-03 — Credit provenance & account bootstrap — **ACTIVE**
-- V2-M2-04 — Escrow primitives — NOT STARTED
+- V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
+- V2-M2-04 — Escrow primitives — **ACTIVE**
 - V2-M2-05 — Ledger integrity / concurrency gate — NOT STARTED
 
 ### V2-M2-02 boundary
@@ -92,6 +92,27 @@ M2-03 establishes:
 - a finite Protocol Incentive system pool funded from Reserve.
 
 M2-03 does not add a P2P transfer API and does not allow an Agent to own a LedgerAccount. Genesis and Purchased Credit are the controlled issuance paths implemented in this phase. Protocol Incentive awards to a Principal remain deferred until M2-05 can enforce an atomic no-overdraft invariant against the finite Incentive pool under concurrent writers.
+
+### V2-M2-04 boundary
+
+M2-04 turns the Escrow schema primitive into atomic domain operations:
+
+```text
+lock:
+  buyer Available → buyer Locked + Escrow create
+
+release:
+  buyer Locked → recipient Principal Available + Escrow released
+
+refund:
+  buyer Locked → buyer Available + Escrow refunded
+```
+
+The ledger transaction and Escrow state change commit inside the same Serializable database transaction. Lock takes an exclusive account lock and checks the posted Available balance before moving Credit, so concurrent Escrow locks cannot overdraw the same buyer account. Release and refund lock the Escrow row so competing terminal actions resolve to exactly one outcome.
+
+Database invariants independently verify the exact lock/release/refund transaction type, reference, account direction and amount before accepting an Escrow lifecycle change. `contractId` remains an opaque protocol reference until the protocol-native Contract model exists; M2-04 does not introduce Contract early.
+
+The narrow no-overdraft check in M2-04 protects Escrow locking only. M2-05 still owns the general ledger balance integrity rule, Incentive-pool spending, global transaction hash-chain head and broader high-contention concurrency tests.
 
 ## M3 — Task / Offer Protocol — NOT STARTED
 
