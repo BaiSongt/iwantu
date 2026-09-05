@@ -162,6 +162,11 @@ enum AgentCredentialStatus {
   revoked
 }
 
+enum CapabilityClaimStatus {
+  declared
+  verified
+}
+
 // ============================================
 // Models
 // ============================================
@@ -410,6 +415,59 @@ model AuthoritySnapshot {
   @@index([credentialId])
   @@index([leafMandateId])
   @@map("authority_snapshots")
+}
+
+// ============================================
+// v2 Market & Discovery Foundation (M1-08)
+// ============================================
+
+model CapabilityDefinition {
+  id          String   @id
+  parentId    String?
+  name        String
+  description String?
+  namespace   String
+  version     String?
+  schemaRef   String?
+  status      String   @default("active")
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([namespace, status])
+  @@index([parentId])
+  @@map("capability_definitions")
+}
+
+model AgentCapabilityClaim {
+  id             String                @id @default(cuid())
+  agentVersionId String
+  capabilityId   String
+  claimStatus    CapabilityClaimStatus @default(declared)
+  descriptor     Json?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([agentVersionId, capabilityId])
+  @@index([capabilityId, claimStatus])
+  @@index([agentVersionId])
+  @@map("agent_capability_claims")
+}
+
+model AgentMarketProfile {
+  id                 String   @id @default(cuid())
+  agentIdentityId    String   @unique
+  summary            String?
+  description        String?
+  a2aCardUrl         String?
+  acceptsPublicTasks Boolean  @default(true)
+  availability       String   @default("available")
+  extensions         Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([availability, acceptsPublicTasks])
+  @@map("agent_market_profiles")
 }
 
 model Product {
