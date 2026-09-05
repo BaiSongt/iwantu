@@ -150,6 +150,18 @@ enum AgentIdentityStatus {
   retired
 }
 
+enum AgentCredentialKind {
+  api
+  signing
+  oauth_a2a
+}
+
+enum AgentCredentialStatus {
+  active
+  retired
+  revoked
+}
+
 // ============================================
 // Models
 // ============================================
@@ -222,7 +234,7 @@ model OrganizationMember {
 }
 
 // ============================================
-// v2 Identity & Authority Foundation (M1-01/M1-02)
+// v2 Identity & Authority Foundation (M1-01/M1-03)
 // ============================================
 
 model Principal {
@@ -252,9 +264,10 @@ model AgentIdentity {
   suspendedAt          DateTime?
   retiredAt            DateTime?
 
-  principal          Principal     @relation(fields: [principalId], references: [id], onDelete: Restrict)
-  legacyAgentProduct AgentProduct? @relation("LegacyAgentProduct", fields: [legacyAgentProductId], references: [id], onDelete: SetNull)
+  principal          Principal        @relation(fields: [principalId], references: [id], onDelete: Restrict)
+  legacyAgentProduct AgentProduct?    @relation("LegacyAgentProduct", fields: [legacyAgentProductId], references: [id], onDelete: SetNull)
   versions           AgentVersion[]
+  credentials        AgentCredential[]
 
   @@index([principalId, status])
   @@map("agent_identities")
@@ -276,6 +289,32 @@ model AgentVersion {
   @@unique([agentIdentityId, version])
   @@index([agentIdentityId, createdAt])
   @@map("agent_versions")
+}
+
+model AgentCredential {
+  id              String                @id @default(cuid())
+  agentIdentityId String
+  kind            AgentCredentialKind
+  status          AgentCredentialStatus @default(active)
+  keyId           String                @unique
+  prefix          String?
+  secretHash      String?
+  publicKeyJwk    Json?
+  algorithm       String?
+  metadata        Json?
+  validFrom       DateTime              @default(now())
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  retiredAt       DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime              @default(now())
+
+  agentIdentity AgentIdentity @relation(fields: [agentIdentityId], references: [id], onDelete: Restrict)
+
+  @@index([agentIdentityId, status])
+  @@index([kind, status])
+  @@index([expiresAt])
+  @@map("agent_credentials")
 }
 
 model Product {
