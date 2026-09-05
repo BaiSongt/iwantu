@@ -302,7 +302,7 @@ test('M1-05: delegation may only reduce authority in every modeled dimension', a
     () =>
       assertDelegationNarrowing(parent, {
         ...child,
-        dataPolicy: { allowedDataRefs: ['asset:part'], rawDataAccess: true },
+        dataPolicy: { allowedDataRefs: ['asset:outside'], rawDataAccess: false },
       }),
     expectAuthorityCode('delegation_data_expansion'),
   );
