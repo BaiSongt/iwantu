@@ -49,17 +49,22 @@ async function createPrincipalFixture(label) {
 }
 
 async function getSystemAccount(type) {
-  return prisma.ledgerAccount.upsert({
-    where: {
-      principalId_type_currency: {
-        principalId: null,
-        type,
-        currency: 'IWC',
-      },
-    },
-    update: {},
-    create: { type, currency: 'IWC' },
+  const existing = await prisma.ledgerAccount.findFirst({
+    where: { principalId: null, type, currency: 'IWC' },
   });
+  if (existing) return existing;
+
+  try {
+    return await prisma.ledgerAccount.create({
+      data: { type, currency: 'IWC' },
+    });
+  } catch (error) {
+    const raced = await prisma.ledgerAccount.findFirst({
+      where: { principalId: null, type, currency: 'IWC' },
+    });
+    if (raced) return raced;
+    throw error;
+  }
 }
 
 async function createDraftTransaction(type, label, metadata = undefined) {
