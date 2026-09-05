@@ -133,6 +133,23 @@ enum VerificationPurpose {
   register
 }
 
+// v2 Identity & Authority domain enums.
+enum PrincipalType {
+  individual
+  organization
+}
+
+enum PrincipalStatus {
+  active
+  suspended
+}
+
+enum AgentIdentityStatus {
+  active
+  suspended
+  retired
+}
+
 // ============================================
 // Models
 // ============================================
@@ -159,6 +176,7 @@ model User {
   agentActions        AgentAction[]          @relation("AgentActionDelegator")
   apiKeys             ApiKey[]               @relation("ApiKeyOwner")
   notifications       Notification[]
+  principal           Principal?             @relation("IndividualPrincipal")
 
   @@index([orgId])
   @@index([role])
@@ -182,6 +200,7 @@ model Organization {
   agentProducts  AgentProduct[]
   companyProfile CompanyProfile?
   solutions      Solution[]              @relation("OrgSolutions")
+  principal      Principal?              @relation("OrganizationPrincipal")
 
   @@index([type])
   @@map("organizations")
@@ -200,6 +219,63 @@ model OrganizationMember {
   @@unique([userId, orgId])
   @@index([orgId])
   @@map("organization_members")
+}
+
+// ============================================
+// v2 Identity & Authority Foundation (M1-01/M1-02)
+// ============================================
+
+model Principal {
+  id             String          @id @default(cuid())
+  type           PrincipalType
+  status         PrincipalStatus @default(active)
+  userId         String?         @unique
+  organizationId String?         @unique
+  createdAt      DateTime        @default(now())
+  suspendedAt    DateTime?
+
+  user         User?         @relation("IndividualPrincipal", fields: [userId], references: [id], onDelete: Restrict)
+  organization Organization? @relation("OrganizationPrincipal", fields: [organizationId], references: [id], onDelete: Restrict)
+  agents       AgentIdentity[]
+
+  @@index([type, status])
+  @@map("principals")
+}
+
+model AgentIdentity {
+  id                   String              @id @default(cuid())
+  principalId          String
+  legacyAgentProductId String?             @unique
+  name                 String
+  status               AgentIdentityStatus @default(active)
+  createdAt            DateTime            @default(now())
+  suspendedAt          DateTime?
+  retiredAt            DateTime?
+
+  principal          Principal     @relation(fields: [principalId], references: [id], onDelete: Restrict)
+  legacyAgentProduct AgentProduct? @relation("LegacyAgentProduct", fields: [legacyAgentProductId], references: [id], onDelete: SetNull)
+  versions           AgentVersion[]
+
+  @@index([principalId, status])
+  @@map("agent_identities")
+}
+
+model AgentVersion {
+  id                           String   @id @default(cuid())
+  agentIdentityId              String
+  version                      String
+  softwareVersion              String?
+  runtimeMeta                  Json?
+  modelMeta                    Json?
+  capabilityImplementationMeta Json?
+  createdAt                    DateTime @default(now())
+  retiredAt                    DateTime?
+
+  agentIdentity AgentIdentity @relation(fields: [agentIdentityId], references: [id], onDelete: Restrict)
+
+  @@unique([agentIdentityId, version])
+  @@index([agentIdentityId, createdAt])
+  @@map("agent_versions")
 }
 
 model Product {
@@ -257,7 +333,8 @@ model AgentProduct {
   accent          String        @default("blue")
   shot            String        @default("default")
 
-  organization Organization @relation(fields: [orgId], references: [id])
+  organization Organization   @relation(fields: [orgId], references: [id])
+  agentIdentity AgentIdentity? @relation("LegacyAgentProduct")
 
   @@index([orgId])
   @@index([status])
@@ -354,7 +431,7 @@ model PocProject {
   startDate          DateTime         @default(now())
   endDate            DateTime?
 
-  demand      Demand          @relation(fields: [demandId], references: [id])
+  demand       Demand           @relation(fields: [demandId], references: [id])
   participants PocParticipant[]
 
   @@index([demandId])
@@ -399,7 +476,7 @@ model Proposal {
 }
 
 model Milestone {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   proposalId   String
   name         String
   description  String?
@@ -429,12 +506,12 @@ model QuoteItem {
 }
 
 model MessageThread {
-  id            String             @id @default(cuid())
+  id            String            @id @default(cuid())
   title         String
   type          MessageThreadType
   relatedId     String?
-  lastMessage   String             @default("")
-  lastMessageAt DateTime           @default(now())
+  lastMessage   String            @default("")
+  lastMessageAt DateTime          @default(now())
 
   messages     Message[]
   participants ThreadParticipant[]
@@ -445,13 +522,13 @@ model MessageThread {
 }
 
 model Message {
-  id             String   @id @default(cuid())
-  threadId       String
-  senderId       String
-  senderName     String
-  content        String
-  isAiGenerated  Boolean  @default(false)
-  timestamp      DateTime @default(now())
+  id            String   @id @default(cuid())
+  threadId      String
+  senderId      String
+  senderName    String
+  content       String
+  isAiGenerated Boolean  @default(false)
+  timestamp     DateTime @default(now())
 
   thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   sender User          @relation("MessageSender", fields: [senderId], references: [id])
@@ -475,7 +552,7 @@ model ThreadParticipant {
 }
 
 model AuditLog {
-  id            String       @id @default(cuid())
+  id            String        @id @default(cuid())
   agentId       String?
   userId        String
   action        String
@@ -485,7 +562,7 @@ model AuditLog {
   decision      AuditDecision
   inputPayload  String?
   outputPayload String?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime      @default(now())
 
   user User @relation("AuditLogUser", fields: [userId], references: [id])
 
@@ -496,7 +573,7 @@ model AuditLog {
 }
 
 model AgentAction {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   agentId         String?
   delegatorUserId String?
   organizationId  String?
@@ -505,10 +582,10 @@ model AgentAction {
   targetId        String
   inputPayload    String?
   outputPayload   String?
-  riskLevel       RiskLevel     @default(low)
-  decision        AuditDecision @default(allowed)
+  riskLevel       RiskLevel      @default(low)
+  decision        AuditDecision  @default(allowed)
   approvalStatus  ApprovalStatus @default(pending)
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime       @default(now())
 
   delegator User? @relation("AgentActionDelegator", fields: [delegatorUserId], references: [id])
 
@@ -519,14 +596,14 @@ model AgentAction {
 }
 
 model ApiKey {
-  id         String    @id @default(cuid())
-  key        String    @unique
+  id         String   @id @default(cuid())
+  key        String   @unique
   name       String
   userId     String
   scopes     String[]
   expiresAt  DateTime?
   lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
   user User @relation("ApiKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -551,15 +628,15 @@ model Attachment {
 }
 
 model Review {
-  id         String          @id @default(cuid())
+  id         String           @id @default(cuid())
   targetType ReviewTargetType
   targetId   String
   userId     String
-  rating     Int             // 1-5
+  rating     Int // 1-5
   title      String
   content    String
-  status     String          @default("published") // published, hidden
-  createdAt  DateTime        @default(now())
+  status     String           @default("published") // published, hidden
+  createdAt  DateTime         @default(now())
 
   author User @relation("ReviewAuthor", fields: [userId], references: [id])
 
@@ -586,11 +663,11 @@ model FeaturedItem {
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // proposal_received, proposal_accepted, poc_status, message, system
+  type      String // proposal_received, proposal_accepted, poc_status, message, system
   title     String
   content   String
   read      Boolean  @default(false)
-  link      String?  // URL to related resource
+  link      String? // URL to related resource
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
 
@@ -600,14 +677,14 @@ model Notification {
 }
 
 model EmailVerificationCode {
-  id          String              @id @default(cuid())
-  email       String
-  codeHash    String
-  purpose     VerificationPurpose @default(register)
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  attempts    Int                 @default(0)
-  createdAt   DateTime            @default(now())
+  id         String              @id @default(cuid())
+  email      String
+  codeHash   String
+  purpose    VerificationPurpose @default(register)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int                 @default(0)
+  createdAt  DateTime            @default(now())
 
   @@index([email])
   @@index([email, purpose])
