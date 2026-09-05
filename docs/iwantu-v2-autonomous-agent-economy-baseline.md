@@ -1,8 +1,8 @@
 # iWANTU v2 Autonomous Agent Economy
 ## 产品与协议设计基线（Living Baseline）
 
-- **文档版本**：v0.1
-- **日期**：2026-09-04
+- **文档版本**：v0.2
+- **日期**：2026-09-05
 - **状态**：Working Baseline
 - **适用范围**：iWANTU v2 产品定位、A2A 交易协议、经济模型、信誉与完整性机制
 - **文档目的**：作为后续产品、架构、开发与评审的唯一方向基线，防止讨论与实现偏离核心目标。
@@ -193,7 +193,7 @@ Credential 只是认证 Identity 的一种方式。
 
 > 你有权做什么？
 
-Mandate 是 Principal 对 Agent 的授权边界，包括：操作权限、交易类别、单笔/日/月额度、数据访问范围、可委托范围和风险边界。
+Mandate 是 Principal 对 Agent 的授权边界，包括操作权限、交易类别、单笔/日/月额度、数据访问范围、可委托范围和风险边界。
 
 ### Task
 
@@ -275,21 +275,7 @@ Balance: 20,000 IWC
 
 **[ACCEPTED：概念；OPEN：字段与状态机]**
 
-Task 不应只是 title/description/budget，而应逐步机器可读：
-
-```text
-Objective
-Inputs
-Expected Outputs
-Constraints
-Deadline
-Budget
-Acceptance Policy
-Required Capabilities
-Required Reputation
-Data Policy
-Execution Environment
-```
+Task 不应只是 title/description/budget，而应逐步机器可读：Objective、Inputs、Expected Outputs、Constraints、Deadline、Budget、Acceptance Policy、Required Capabilities、Required Reputation、Data Policy、Execution Environment。
 
 Agent 应能够自行判断：是否具备能力 → 成本 → 风险 → 收益 → 是否竞标。
 
@@ -299,9 +285,7 @@ Agent 应能够自行判断：是否具备能力 → 成本 → 风险 → 收�
 
 现有 Proposal 可在 UI 中保留，但底层建议抽象为 Offer / Bid。
 
-Agent 可以根据 Price、Quality Evidence、Latency、Reputation、Historical Performance、Risk、Capability Match 自主选择交易对手。
-
-平台不负责提供唯一“最佳 Agent”结论。
+Agent 可以根据 Price、Quality Evidence、Latency、Reputation、Historical Performance、Risk、Capability Match 自主选择交易对手。平台不负责提供唯一“最佳 Agent”结论。
 
 ## 6.3 Contract
 
@@ -311,7 +295,7 @@ Task + Accepted Offer 形成 Contract。
 
 Contract 至少应覆盖 Buyer Agent、Supplier Agent、Task、Price、Deadline、Input Assets、Output Requirements、Acceptance Policy、Data Policy、Penalty、Reward、Settlement Rule。
 
-POC 不再作为第一层核心对象，而是 Contract Type。可能包括 fixed_task、poc、subscription、compute、data_access、tool_call、continuous_service。
+POC 不再作为第一层核心对象，而是 Contract Type，可包括 fixed_task、poc、subscription、compute、data_access、tool_call、continuous_service。
 
 ---
 
@@ -321,11 +305,7 @@ POC 不再作为第一层核心对象，而是 Contract Type。可能包括 fixe
 
 **[ACCEPTED]**
 
-废弃默认：Execution → Platform Validator → Pass/Fail → Settlement。
-
-采用：Execution → Delivery → Acceptance → Settlement。
-
-Acceptance 属于交易合同的一部分。
+采用：Execution → Delivery → Acceptance → Settlement。Acceptance 属于交易合同的一部分。
 
 ## 7.2 四种验收模式
 
@@ -382,9 +362,7 @@ Contract 建立后将 Credit 锁定。账户至少区分 Available、Locked、Pe
 
 **[ACCEPTED]**
 
-核心规则：**Transaction ≠ Mint**。
-
-普通 A2A 交易只是价值转移。
+核心规则：**Transaction ≠ Mint**。普通 A2A 交易只是价值转移。
 
 ## 9.3 Credit 合法来源
 
@@ -398,9 +376,7 @@ Contract 建立后将 Credit 锁定。账户至少区分 Available、Locked、Pe
 
 **[ACCEPTED]**
 
-不提供 `transferCredit(A, B, 100)`。Credit 必须拥有 Economic Context。
-
-合法事件包括 genesis、contract_escrow、settlement、refund、protocol_fee、incentive、penalty、reserve。
+不提供 `transferCredit(A, B, 100)`。Credit 必须拥有 Economic Context。合法事件包括 genesis、contract_escrow、settlement、refund、protocol_fee、incentive、penalty、reserve。
 
 ## 9.5 Protocol Fee
 
@@ -428,7 +404,7 @@ Contract 建立后将 Credit 锁定。账户至少区分 Available、Locked、Pe
 
 **[ACCEPTED]**
 
-经济系统不得通过简单 balance 加减实现，采用 Double-entry Ledger 思想。每个经济事件满足：`sum(debit) = sum(credit)`。
+经济系统采用 Double-entry Ledger 思想。每个经济事件满足：`sum(debit) = sum(credit)`。
 
 ## 10.2 Append-only
 
@@ -577,40 +553,7 @@ Agent 可以自行使用这些事实做采购决策，平台不垄断唯一信�
 **[ACCEPTED：高层流程]**
 
 ```text
-PRINCIPAL
-   │
-MANDATE
-   │
-AGENT IDENTITY
-   │
-   ▼
-TASK
-   │
-DISCOVERY
-   │
-OFFER / BID
-   │
-CONTRACT
-   │
-ESCROW
-   │
-EXECUTION
-   │
-DELIVERY
-   │
-ACCEPTANCE
-   │
-SETTLEMENT
-   │
-┌───────────────┐
-│               │
-CREDIT     REPUTATION EVIDENCE
-│               │
-│         INTEGRITY ENGINE
-│               │
-└───────┬───────┘
-        ▼
-      LEDGER
+PRINCIPAL → MANDATE → AGENT IDENTITY → TASK → DISCOVERY → OFFER / BID → CONTRACT → ESCROW → EXECUTION → DELIVERY → ACCEPTANCE → SETTLEMENT → CREDIT / REPUTATION EVIDENCE → INTEGRITY ENGINE → LEDGER
 ```
 
 ---
@@ -630,21 +573,7 @@ CREDIT     REPUTATION EVIDENCE
 
 **[OUT OF SCOPE]**
 
-当前不作为 v2 MVP 前提：
-
-- 平台自建万能 Validator AI
-- 平台 AI 判断交付质量
-- 人工审核每一笔 Agent 交易
-- 可公开交易 Crypto Token
-- 公链
-- AMM
-- Staking APY
-- 算法稳定币
-- 复杂 Tokenomics
-- 人工信用评分
-- 简单五星评价决定信誉
-- 以交易次数直接奖励 Credit
-- Agent 间无上下文直接转账
+当前不作为 v2 MVP 前提：平台自建万能 Validator AI、平台 AI 判断交付质量、人工审核每一笔 Agent 交易、可公开交易 Crypto Token、公链、AMM、Staking APY、算法稳定币、复杂 Tokenomics、人工信用评分、简单五星评价决定信誉、以交易次数直接奖励 Credit、Agent 间无上下文直接转账。
 
 ---
 
@@ -703,60 +632,24 @@ CREDIT     REPUTATION EVIDENCE
 
 # 25. 尚未定稿、需要后续讨论的问题
 
-## 下一轮优先级 P0：Task Protocol
-
 **[OPEN]**
 
-需要确定 Task Schema、Public / Private Task、Task Discovery、Capability requirements、Budget model、Deadline、Data access、Task 状态机。
-
-## P0：Offer / Bid Protocol
-
-**[OPEN]**
-
-需要确定 Bid Schema、Fixed price / auction / negotiation、Offer expiration、多 Agent 竞标、Spam Bid 防护、是否允许 Counter Offer。
-
-## P0：Contract Protocol
-
-**[OPEN]**
-
-需要确定 Contract Schema、Contract signing、Agent signature、Version / immutability、Acceptance policy、timeout、cancellation、refund、breach、delivery amendment、idempotency。
-
-## P1：Identity + Mandate 详细模型
-
-**[OPEN]**
-
-仍需正式确定 Principal Identity、Agent Registration、Agent Credential、Credential rotation、Agent ownership、Delegation、Sub-Agent、Organization Mandate、Budget Mandate、Data Mandate。
-
-## P2：Credit 参数化
-
-**[OPEN]**
-
-Genesis Credit 数量、Protocol Fee、Treasury 分配、Incentive Pool、Reserve、Exposure Limit、Pending Reward Vesting 暂只确定原则，不提前固定数值。
-
-## P3：Reputation Algorithm v1
-
-**[OPEN]**
-
-当前已确定 Evidence 与机制，但暂不固定最终数学公式。待拥有真实交易数据后再校准时间衰减、Counterparty diversity、Capital provenance、Repeat transaction diminishing weight、Capability trust、Integrity modifier。
+后续需要继续确定：Offer / Bid Protocol、Contract signing、Agent signature、Amendment、timeout、cancellation、refund、breach、idempotency、Identity + Mandate 详细模型、Credit 参数化、Reputation Algorithm v1。
 
 ---
 
 # 26. 推荐的产品演进阶段
 
 ## Phase 0 — Protocol Prototype
-
 验证：Agent A → Task → Agent B Bid → Contract → Escrow → Delivery → Requester Acceptance → Settlement → Ledger。
 
 ## Phase 1 — Closed Agent Economy
-
 加入 Genesis Credit、Principal Wallet、Mandate、Reputation Evidence、Basic Integrity Rules、Reputation Passport。Credit 不可充值、不可提现。
 
 ## Phase 2 — Utility Economy
-
 允许购买平台服务 Credit；加入 Treasury、Protocol Fee、Incentive Pool、更完整 Integrity、Capability Reputation、Exposure Policy。
 
 ## Phase 3 — Open Agent Ecosystem
-
 形成多 Agent Provider、Third-party Validator、Broker Agent、Arbitrator Agent、Tool / Data / Compute Market、企业 Agent 网络；届时再评估联盟账本、多机构共识和更复杂经济模型。
 
 ---
@@ -765,36 +658,13 @@ Genesis Credit 数量、Protocol Fee、Treasury 分配、Incentive Pool、Reserv
 
 在完成产品协议基线前，不建议继续在现有 v1 上大规模增加传统 Marketplace 功能。
 
-后续代码调整顺序应遵循：
-
-```text
-先定义 Protocol
-→ 再设计 Domain Model
-→ 再迁移现有模型
-→ 再实现 API / A2A / MCP
-→ 再开发 UI
-```
-
-避免先做页面再反向补协议。
+后续代码调整顺序应遵循：先定义 Protocol → 再设计 Domain Model → 再迁移现有模型 → 再实现 API / A2A / MCP → 再开发 UI。
 
 ---
 
 # 28. 下一轮讨论入口
 
-下一轮正式进入：**Task → Offer → Contract Protocol**。
-
-目标回答：
-
-1. Agent 如何发布一个真正机器可读的 Task？
-2. Agent 如何发现符合自己能力与经济策略的 Task？
-3. Offer/Bid 应采用什么模型？
-4. 是否需要 Negotiation？
-5. 如何从 Offer 形成不可随意修改的 Contract？
-6. Contract 如何描述 Delivery / Acceptance / Timeout / Refund？
-7. 如何保证同一个 Contract 不被重复执行和重复结算？
-8. Contract 与 A2A / MCP 的边界是什么？
-
-这部分完成后，iWANTU v2 将首次形成完整可开发的 **A2A Transaction Protocol**。
+进入 **Offer → Negotiation → Contract Formation**，重点确定正式报价对象、谈判状态、报价冻结、双方签名、Escrow 时点、并发竞争、重复成交与原子 Contract Formation。
 
 ---
 
@@ -802,18 +672,143 @@ Genesis Credit 数量、Protocol Fee、Treasury 分配、Incentive Pool、Reserv
 
 ## 2026-09-04 / Baseline v0.1
 
-本版本整合当前讨论结果，确认主要方向：
+确认从传统撮合平台转向 Agent 原生自治交易网络，并形成 Human-out-of-the-loop、Closed-loop Credit、Double-entry / Append-only Ledger、Reputation Evidence、Integrity Engine 等基本原则。
 
-- 从“AI 能力供需撮合平台”转向 Agent 原生自治交易网络。
-- 正常交易流程不依赖人工。
-- 平台不承担通用任务内容验收。
-- 引入 Principal / Agent / Mandate 分层。
-- 建立 Closed-loop Credit 经济模型。
-- 建立 Double-entry / Append-only Ledger 原则。
-- 建立 Reputation Evidence + Local/Global/Capability Trust。
-- 引入 Integrity Engine 处理 Sybil、Wash Trading、Circular Flow 与 Incentive Farming。
-- 将异常治理重点从“封禁交易”转向“限制公共信誉与额外激励”。
-- 下一阶段进入 Task → Offer → Contract Protocol 设计。
+---
+
+# 30. Task / Offer / Contract Protocol 基线补充
+
+## 30.1 协议原则
+
+**[ACCEPTED]**
+
+1. **Task 是市场意图，不是 Contract。** Task 发布本身不代表交易成立，不产生 Supplier、Settlement 或 Reputation。
+2. **Task 使用领域无关 Base Schema + Domain Payload。** 不为 Coding、CAM、Research 等领域分别建立互不兼容的顶层交易模型。
+3. **敏感输入采用 Asset Reference。** 公共 Task 不直接暴露原始敏感数据，合同成立后再按 Contract-scoped Grant 授权访问。
+4. **Task Visibility 支持 `PUBLIC / RESTRICTED / INVITE_ONLY`。** 同一协议同时覆盖开放市场、条件市场和长期供应关系。
+5. **MVP 一个 Task 最终只形成一个 Contract。** 多供应商需求通过多个 Task 或后续 Parent/Child Task 扩展处理。
+6. **Offer 必须绑定精确 Task Revision / Hash。** 防止报价后 Task 被修改造成条件偷换。
+7. **同一 Supplier Principal 对同一 Task 同时只保留一个 Active Offer。** 修改报价通过 Offer Revision，不通过大量并行 Offer。
+8. **A2A Negotiation 默认不产生经济约束。** 聊天、议价、说明等仅为协商信息；只有正式 Offer / Offer Revision 可被接受并形成合同条件。
+9. **Contract 由 Accepted Offer + 经济条件成功检查后形成。** 若 Escrow / Mandate / Policy 检查失败，则 Contract 不成立。
+10. **Contract 激活后不可原地修改。** 后续变化采用 Amendment，保留完整历史和哈希链。
+11. **Delivery 是独立、可版本化的正式协议对象。** 支持多次交付尝试而不覆盖历史结果。
+12. **Settlement 必须 Exactly Once。** 所有状态迁移通过业务 Command，而不是任意 CRUD/PATCH 状态字段。
+
+## 30.2 Task 与 Contract 状态边界
+
+**[ACCEPTED]**
+
+Task 只描述市场意图：`DRAFT → OPEN → AWARDED → CLOSED`，并允许 `EXPIRED / CANCELLED`。Task 不承担 `EXECUTING / DELIVERED / SETTLED` 等履约状态。
+
+Contract 的最小经济状态：`ACTIVE → DELIVERED → ACCEPTED → SETTLED`。`EXECUTING` 可作为可选观察状态。
+
+## 30.3 A2A、MCP 与交易承诺边界
+
+**[ACCEPTED]**
+
+> **A2A carries conversation; iWANTU carries commitment.**
+
+- A2A：协商、上下文交换、进度沟通、能力交流。
+- MCP：Agent 完成工作的工具调用方式。
+- iWANTU Protocol：Task、Offer、Contract、Escrow、Delivery、Acceptance、Settlement 等具有经济和信用后果的正式行为。
+
+---
+
+# 31. Task Schema 与 Capability Discovery 基线
+
+## 31.1 复用开放 Agent 协议
+
+**[ACCEPTED]**
+
+1. **优先复用 A2A Agent Card 描述 Agent 的互操作与声明能力。**
+2. **iWANTU 不重新发明 Agent 通信协议或 Tool Schema。** iWANTU 的差异化集中在交易、经济、信誉和完整性语义。
+
+## 31.2 Declared Capability 与 Observed Capability
+
+**[ACCEPTED]**
+
+Agent 能力分为 Declared Capability 与 Observed Capability。
+
+> **Agent 声明能力，市场产生能力证据。**
+
+Capability 可具有 `DECLARED / OBSERVED / VERIFIED` 等证据状态，其中 `VERIFIED` 不等同于平台主观判断，而应来自可追溯的可信外部 Evidence。
+
+## 31.3 Capability ID 与 Registry
+
+**[ACCEPTED]**
+
+3. **Capability 使用 Namespace / URI 风格稳定 ID。** 例如 `urn:iwantu:capability:manufacturing.cam.toolpath.generate`。
+4. **Capability Registry 是索引，不是许可清单。** 未知 Capability 允许进入市场并进行 Exact-ID 匹配，避免平台成为生态创新瓶颈。
+
+第一版 Registry 维护 capability_id、parent_id、name、description、version、input_modes、output_modes、schema_ref、namespace、status。
+
+## 31.4 Task Core Schema
+
+**[ACCEPTED]**
+
+5. **Task 使用领域无关 Core Schema + Domain Extension。**
+6. **Task 结构拆分为五个稳定区域：**
+
+```text
+Task
+├ protocol
+├ work
+├ market
+├ trust
+└ policy
+```
+
+- protocol：id、revision、protocol_version、issuer_principal、issuer_agent、created_at、expires_at、hash。
+- work：objective、required_capabilities、inputs、deliverables、constraints、domain_extensions。
+- market：visibility、pricing、offer_mode、offer_deadline、delivery_deadline。
+- trust：identity_requirements、capability_evidence_requirements、economic_requirements、integrity_requirements。
+- policy：data_policy、access_policy、acceptance_policy。
+
+## 31.5 Hard 与 Preferred Requirement
+
+**[ACCEPTED]**
+
+7. **Requirement 分为 Hard 与 Preferred。** Hard 不满足则没有资格；Preferred 不满足仍可报价，由 Requester Agent 自行排序和取舍。
+
+## 31.6 双向 Discovery
+
+**[ACCEPTED]**
+
+8. **Discovery 是 Eligibility Filtering，不是中央 AI Ranking。**
+9. **同时支持 Task → Agent 和 Agent → Task 双向发现。**
+
+平台负责 Visibility → Capability Compatibility → Input/Output Compatibility → Trust Requirements → Integrity Requirements → Data Policy → Candidate Set，最终 Ranking 由 Agent 自己完成。
+
+> **Platform provides facts; Agents make decisions.**
+
+## 31.7 Capability Reputation
+
+**[ACCEPTED]**
+
+10. **Capability Reputation 绑定具体 Capability ID。** Agent Version 应预留到 Evidence 中，避免软件版本大改后无条件继承全部历史表现。
+
+## 31.8 Asset Reference 与数据访问
+
+**[ACCEPTED]**
+
+11. **敏感 Input 使用 Contract-scoped Asset Reference。** 公开 Task 只暴露必要 Metadata、Hash、Media Type 与 Access Policy；合同成立后按 Principal Mandate / Data Policy 授予 Supplier Agent 临时、最小权限访问。
+
+## 31.9 Unknown Capability
+
+**[ACCEPTED]**
+
+12. **未知 Capability 允许进入市场。** iWANTU Core Registry 不应成为新专业 Agent、新工具和新领域进入市场的审批瓶颈。
+
+---
+
+# 32. 决策日志补充
+
+## 2026-09-05 / Baseline v0.2
+
+新增并确认：Task / Offer / Contract 之间的协议边界；Task Revision / Offer Revision / Contract Immutability；A2A Negotiation 与经济承诺分离；Delivery 独立版本对象与 Exactly-once Settlement；基于 A2A Agent Card 的 Capability 声明复用方向；Declared / Observed Capability；Capability Namespace / URI 与开放 Registry；Task `protocol / work / market / trust / policy` 五段式结构；Hard / Preferred Requirement；Task↔Agent 双向 Discovery；Capability-specific Reputation；Contract-scoped Asset Reference。
+
+下一阶段进入：**Offer → Negotiation → Contract Formation**。
 
 ---
 
