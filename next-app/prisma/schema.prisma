@@ -185,10 +185,10 @@ model User {
   threadParticipants  ThreadParticipant[]
   reviews             Review[]               @relation("ReviewAuthor")
   auditLogs           AuditLog[]             @relation("AuditLogUser")
-  agentActions        AgentAction[]          @relation("AgentActionDelegator")
-  apiKeys             ApiKey[]               @relation("ApiKeyOwner")
+  agentActions        AgentAction[]           @relation("AgentActionDelegator")
+  apiKeys             ApiKey[]                @relation("ApiKeyOwner")
   notifications       Notification[]
-  principal           Principal?             @relation("IndividualPrincipal")
+  principal           Principal?              @relation("IndividualPrincipal")
 
   @@index([orgId])
   @@index([role])
@@ -234,7 +234,7 @@ model OrganizationMember {
 }
 
 // ============================================
-// v2 Identity & Authority Foundation (M1-01/M1-04)
+// v2 Identity & Authority Foundation (M1-01/M1-05)
 // ============================================
 
 model Principal {
@@ -271,6 +271,7 @@ model AgentIdentity {
   versions           AgentVersion[]
   credentials        AgentCredential[]
   mandates           Mandate[]        @relation("MandateSubjectAgent")
+  delegatedMandates  Mandate[]        @relation("MandateDelegatingAgent")
 
   @@index([principalId, status])
   @@map("agent_identities")
@@ -321,39 +322,48 @@ model AgentCredential {
 }
 
 model Mandate {
-  id                     String   @id @default(cuid())
-  mandateFamilyId        String
-  version                Int
-  protocolVersion        String   @default("iwantu-mandate/0.1")
-  issuerPrincipalId      String
-  subjectAgentIdentityId String
-  actionScopes           String[]
-  capabilityScopes       String[]
-  economicLimits         Json
-  resourcePolicy         Json
-  dataPolicy             Json
-  counterpartyPolicy     Json
-  validFrom              DateTime
-  validUntil             DateTime?
-  delegationAllowed      Boolean  @default(false)
-  maxDelegationDepth     Int      @default(0)
-  payloadHash            String
-  signatureAlgorithm     String
-  signatureKeyId         String
-  signature              String
-  supersedesMandateId    String?  @unique
-  createdAt              DateTime @default(now())
+  id                        String   @id @default(cuid())
+  mandateFamilyId           String
+  version                   Int
+  protocolVersion           String   @default("iwantu-mandate/0.1")
+  issuerPrincipalId         String
+  subjectAgentIdentityId    String
+  actionScopes              String[]
+  capabilityScopes          String[]
+  economicLimits            Json
+  resourcePolicy            Json
+  dataPolicy                Json
+  counterpartyPolicy        Json
+  validFrom                 DateTime
+  validUntil                DateTime?
+  delegationAllowed         Boolean  @default(false)
+  maxDelegationDepth        Int      @default(0)
+  delegationDepth           Int      @default(0)
+  parentMandateId           String?
+  delegatingAgentIdentityId String?
+  payloadHash               String
+  signatureAlgorithm        String
+  signatureKeyId            String
+  signature                 String
+  supersedesMandateId       String?  @unique
+  createdAt                 DateTime @default(now())
 
-  issuerPrincipal Principal     @relation("MandateIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
-  subjectAgent    AgentIdentity @relation("MandateSubjectAgent", fields: [subjectAgentIdentityId], references: [id], onDelete: Restrict)
-  supersedes      Mandate?      @relation("MandateSupersession", fields: [supersedesMandateId], references: [id], onDelete: Restrict)
-  supersededBy    Mandate?      @relation("MandateSupersession")
-  revocation      MandateRevocation?
+  issuerPrincipal  Principal     @relation("MandateIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
+  subjectAgent     AgentIdentity @relation("MandateSubjectAgent", fields: [subjectAgentIdentityId], references: [id], onDelete: Restrict)
+  delegatingAgent  AgentIdentity? @relation("MandateDelegatingAgent", fields: [delegatingAgentIdentityId], references: [id], onDelete: Restrict)
+  parentMandate    Mandate?      @relation("MandateDelegation", fields: [parentMandateId], references: [id], onDelete: Restrict)
+  childDelegations Mandate[]     @relation("MandateDelegation")
+  supersedes       Mandate?      @relation("MandateSupersession", fields: [supersedesMandateId], references: [id], onDelete: Restrict)
+  supersededBy     Mandate?      @relation("MandateSupersession")
+  revocation       MandateRevocation?
 
   @@unique([mandateFamilyId, version])
   @@unique([mandateFamilyId, payloadHash])
   @@index([issuerPrincipalId, createdAt])
+  @@index([issuerPrincipalId, delegationDepth])
   @@index([subjectAgentIdentityId, validFrom])
+  @@index([parentMandateId])
+  @@index([delegatingAgentIdentityId])
   @@index([validUntil])
   @@map("mandates")
 }
