@@ -234,7 +234,7 @@ model OrganizationMember {
 }
 
 // ============================================
-// v2 Identity & Authority Foundation (M1-01/M1-03)
+// v2 Identity & Authority Foundation (M1-01/M1-04)
 // ============================================
 
 model Principal {
@@ -246,9 +246,11 @@ model Principal {
   createdAt      DateTime        @default(now())
   suspendedAt    DateTime?
 
-  user         User?         @relation("IndividualPrincipal", fields: [userId], references: [id], onDelete: Restrict)
-  organization Organization? @relation("OrganizationPrincipal", fields: [organizationId], references: [id], onDelete: Restrict)
-  agents       AgentIdentity[]
+  user               User?               @relation("IndividualPrincipal", fields: [userId], references: [id], onDelete: Restrict)
+  organization       Organization?       @relation("OrganizationPrincipal", fields: [organizationId], references: [id], onDelete: Restrict)
+  agents             AgentIdentity[]
+  issuedMandates     Mandate[]           @relation("MandateIssuerPrincipal")
+  mandateRevocations MandateRevocation[] @relation("MandateRevokedByPrincipal")
 
   @@index([type, status])
   @@map("principals")
@@ -268,6 +270,7 @@ model AgentIdentity {
   legacyAgentProduct AgentProduct?    @relation("LegacyAgentProduct", fields: [legacyAgentProductId], references: [id], onDelete: SetNull)
   versions           AgentVersion[]
   credentials        AgentCredential[]
+  mandates           Mandate[]        @relation("MandateSubjectAgent")
 
   @@index([principalId, status])
   @@map("agent_identities")
@@ -315,6 +318,63 @@ model AgentCredential {
   @@index([kind, status])
   @@index([expiresAt])
   @@map("agent_credentials")
+}
+
+model Mandate {
+  id                     String   @id @default(cuid())
+  mandateFamilyId        String
+  version                Int
+  protocolVersion        String   @default("iwantu-mandate/0.1")
+  issuerPrincipalId      String
+  subjectAgentIdentityId String
+  actionScopes           String[]
+  capabilityScopes       String[]
+  economicLimits         Json
+  resourcePolicy         Json
+  dataPolicy             Json
+  counterpartyPolicy     Json
+  validFrom              DateTime
+  validUntil             DateTime?
+  delegationAllowed      Boolean  @default(false)
+  maxDelegationDepth     Int      @default(0)
+  payloadHash            String
+  signatureAlgorithm     String
+  signatureKeyId         String
+  signature              String
+  supersedesMandateId    String?  @unique
+  createdAt              DateTime @default(now())
+
+  issuerPrincipal Principal     @relation("MandateIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
+  subjectAgent    AgentIdentity @relation("MandateSubjectAgent", fields: [subjectAgentIdentityId], references: [id], onDelete: Restrict)
+  supersedes      Mandate?      @relation("MandateSupersession", fields: [supersedesMandateId], references: [id], onDelete: Restrict)
+  supersededBy    Mandate?      @relation("MandateSupersession")
+  revocation      MandateRevocation?
+
+  @@unique([mandateFamilyId, version])
+  @@unique([mandateFamilyId, payloadHash])
+  @@index([issuerPrincipalId, createdAt])
+  @@index([subjectAgentIdentityId, validFrom])
+  @@index([validUntil])
+  @@map("mandates")
+}
+
+model MandateRevocation {
+  id                   String   @id @default(cuid())
+  mandateId            String   @unique
+  revokedByPrincipalId String
+  reasonCode           String
+  reason               String?
+  payloadHash          String
+  signatureAlgorithm   String
+  signatureKeyId       String
+  signature            String
+  revokedAt            DateTime @default(now())
+
+  mandate            Mandate   @relation(fields: [mandateId], references: [id], onDelete: Restrict)
+  revokedByPrincipal Principal @relation("MandateRevokedByPrincipal", fields: [revokedByPrincipalId], references: [id], onDelete: Restrict)
+
+  @@index([revokedByPrincipalId, revokedAt])
+  @@map("mandate_revocations")
 }
 
 model Product {
