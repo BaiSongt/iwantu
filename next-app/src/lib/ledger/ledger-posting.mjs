@@ -280,57 +280,52 @@ async function lockAndValidateAccounts(tx, normalized) {
   }
 }
 
-async function attemptAtomicPosting(prisma, normalized, expectedHash) {
-  return prisma.$transaction(
-    async (tx) => {
-      const existing = await loadTransactionByIdempotency(tx, normalized.idempotencyKey);
-      if (existing) return verifyExistingTransaction(existing, expectedHash);
+async function postNormalizedWithinTransaction(tx, normalized, expectedHash) {
+  const existing = await loadTransactionByIdempotency(tx, normalized.idempotencyKey);
+  if (existing) return verifyExistingTransaction(existing, expectedHash);
 
-      await lockAndValidateAccounts(tx, normalized);
+  await lockAndValidateAccounts(tx, normalized);
 
-      const transaction = await tx.ledgerTransaction.create({
-        data: {
-          type: normalized.type,
-          referenceType: normalized.referenceType,
-          referenceId: normalized.referenceId,
-          idempotencyKey: normalized.idempotencyKey,
-          ...(normalized.metadata === null ? {} : { metadata: normalized.metadata }),
-        },
-      });
-
-      await tx.ledgerEntry.createMany({
-        data: normalized.entries.map((entry) => ({
-          transactionId: transaction.id,
-          entryIndex: entry.entryIndex,
-          accountId: entry.accountId,
-          side: entry.side,
-          amount: entry.amount,
-          ...(entry.provenance === null ? {} : { provenance: entry.provenance }),
-        })),
-      });
-
-      // previousHash intentionally remains null in M2-02. A global hash-chain head
-      // requires serialized concurrent posting and belongs to the M2-05 integrity gate.
-      await tx.ledgerTransaction.update({
-        where: { id: transaction.id },
-        data: {
-          status: 'posted',
-          postedAt: new Date(),
-          transactionHash: expectedHash,
-        },
-      });
-
-      const posted = await tx.ledgerTransaction.findUnique({
-        where: { id: transaction.id },
-        include: { entries: { orderBy: { entryIndex: 'asc' } } },
-      });
-      if (!posted) {
-        deny('LEDGER_POSTING_FAILED', 'Posted ledger transaction could not be reloaded');
-      }
-      return posted;
+  const transaction = await tx.ledgerTransaction.create({
+    data: {
+      type: normalized.type,
+      referenceType: normalized.referenceType,
+      referenceId: normalized.referenceId,
+      idempotencyKey: normalized.idempotencyKey,
+      ...(normalized.metadata === null ? {} : { metadata: normalized.metadata }),
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-  );
+  });
+
+  await tx.ledgerEntry.createMany({
+    data: normalized.entries.map((entry) => ({
+      transactionId: transaction.id,
+      entryIndex: entry.entryIndex,
+      accountId: entry.accountId,
+      side: entry.side,
+      amount: entry.amount,
+      ...(entry.provenance === null ? {} : { provenance: entry.provenance }),
+    })),
+  });
+
+  // previousHash intentionally remains null in M2-02/M2-04. A global hash-chain
+  // head requires serialized concurrent posting and belongs to M2-05.
+  await tx.ledgerTransaction.update({
+    where: { id: transaction.id },
+    data: {
+      status: 'posted',
+      postedAt: new Date(),
+      transactionHash: expectedHash,
+    },
+  });
+
+  const posted = await tx.ledgerTransaction.findUnique({
+    where: { id: transaction.id },
+    include: { entries: { orderBy: { entryIndex: 'asc' } } },
+  });
+  if (!posted) {
+    deny('LEDGER_POSTING_FAILED', 'Posted ledger transaction could not be reloaded');
+  }
+  return posted;
 }
 
 function isPrismaCode(error, code) {
@@ -338,13 +333,21 @@ function isPrismaCode(error, code) {
 }
 
 /**
- * Canonical write path for future v2 economic events.
- *
- * All transaction and entry writes occur inside one serializable database
- * transaction. Validation failures and database failures therefore leave no
- * draft transaction or partial journal behind. A repeated idempotency key with
- * identical canonical evidence returns the original posted transaction; the
- * same key with different evidence fails closed.
+ * Reuse the canonical posting rules inside an existing database transaction.
+ * The caller owns transaction isolation, retries, and any additional domain
+ * state changes that must commit atomically with the ledger posting.
+ */
+export async function postLedgerTransactionInTransaction(tx, input) {
+  if (!tx || typeof tx.$queryRaw !== 'function' || !tx.ledgerTransaction) {
+    deny('LEDGER_TRANSACTION_CLIENT_INVALID', 'A Prisma transaction client is required');
+  }
+  const normalized = normalizeLedgerPostingInput(input);
+  const expectedHash = hashLedgerPostingEvidence(buildLedgerPostingEvidence(normalized));
+  return postNormalizedWithinTransaction(tx, normalized, expectedHash);
+}
+
+/**
+ * Canonical write path for standalone v2 economic events.
  */
 export async function postLedgerTransaction(prisma, input, options = {}) {
   if (!prisma || typeof prisma.$transaction !== 'function') {
@@ -362,7 +365,10 @@ export async function postLedgerTransaction(prisma, input, options = {}) {
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
-      return await attemptAtomicPosting(prisma, normalized, expectedHash);
+      return await prisma.$transaction(
+        (tx) => postNormalizedWithinTransaction(tx, normalized, expectedHash),
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
     } catch (error) {
       if (error instanceof LedgerPostingError) throw error;
 
