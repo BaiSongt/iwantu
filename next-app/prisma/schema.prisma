@@ -184,7 +184,7 @@ model User {
   sentMessages        Message[]              @relation("MessageSender")
   threadParticipants  ThreadParticipant[]
   reviews             Review[]               @relation("ReviewAuthor")
-  auditLogs           AuditLog[]             @relation("AuditLogUser")
+  auditLogs           AuditLog[]              @relation("AuditLogUser")
   agentActions        AgentAction[]           @relation("AgentActionDelegator")
   apiKeys             ApiKey[]                @relation("ApiKeyOwner")
   notifications       Notification[]
@@ -234,7 +234,7 @@ model OrganizationMember {
 }
 
 // ============================================
-// v2 Identity & Authority Foundation (M1-01/M1-05)
+// v2 Identity & Authority Foundation (M1-01/M1-07)
 // ============================================
 
 model Principal {
@@ -385,6 +385,31 @@ model MandateRevocation {
 
   @@index([revokedByPrincipalId, revokedAt])
   @@map("mandate_revocations")
+}
+
+model AuthoritySnapshot {
+  id                   String   @id @default(cuid())
+  protocolVersion      String   @default("iwantu-authority-snapshot/0.1")
+  principalId          String
+  agentIdentityId      String
+  credentialId         String
+  credentialKeyId      String
+  leafMandateId        String
+  mandateChain         Json
+  authorityChainHash   String
+  effectiveAuthority   Json
+  requestEvidence      Json
+  resolvedAction       String
+  resolvedCapabilityId String?
+  resolvedAt           DateTime
+  evidenceHash         String   @unique
+  createdAt            DateTime @default(now())
+
+  @@index([principalId, resolvedAt])
+  @@index([agentIdentityId, resolvedAt])
+  @@index([credentialId])
+  @@index([leafMandateId])
+  @@map("authority_snapshots")
 }
 
 model Product {
