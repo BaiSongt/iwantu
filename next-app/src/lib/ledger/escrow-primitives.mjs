@@ -35,6 +35,22 @@ function isPrismaCode(error, code) {
   return Boolean(error && typeof error === 'object' && error.code === code);
 }
 
+function isSerializationFailure(error) {
+  if (isPrismaCode(error, 'P2034')) return true;
+  if (!isPrismaCode(error, 'P2010')) return false;
+
+  let metadata = '';
+  try {
+    metadata = JSON.stringify(error.meta ?? {});
+  } catch {
+    metadata = '';
+  }
+  const diagnostic = `${error?.message ?? ''} ${metadata}`;
+  return /could not serialize access|serialization|sqlstate.?40001|\b40001\b|concurrent update/i.test(
+    diagnostic,
+  );
+}
+
 async function requireActivePrincipal(tx, principalId) {
   const rows = await tx.$queryRaw(
     Prisma.sql`
@@ -284,10 +300,12 @@ async function runSerializable(prisma, work, options = {}) {
       });
     } catch (error) {
       if (error instanceof EscrowPrimitiveError || error instanceof LedgerPostingError) throw error;
-      if ((isPrismaCode(error, 'P2034') || isPrismaCode(error, 'P2002')) && attempt < maxRetries) {
+
+      const serializationFailure = isSerializationFailure(error);
+      if ((serializationFailure || isPrismaCode(error, 'P2002')) && attempt < maxRetries) {
         continue;
       }
-      if (isPrismaCode(error, 'P2034')) {
+      if (serializationFailure) {
         deny('ESCROW_CONCURRENCY_RETRY_EXHAUSTED', 'Escrow serialization retries exhausted');
       }
       throw error;
