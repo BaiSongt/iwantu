@@ -56,11 +56,29 @@ Core invariants:
 
 ### M2 work sequence
 
-- V2-M2-01 — Ledger schema & accounting invariants
-- V2-M2-02 — Atomic posting engine
-- V2-M2-03 — Credit provenance & account bootstrap
-- V2-M2-04 — Escrow primitives
-- V2-M2-05 — Ledger integrity / concurrency gate
+- V2-M2-01 — Ledger schema & accounting invariants — **COMPLETE** (`master` at/after `75986d9e`)
+- V2-M2-02 — Atomic posting engine — **ACTIVE**
+- V2-M2-03 — Credit provenance & account bootstrap — NOT STARTED
+- V2-M2-04 — Escrow primitives — NOT STARTED
+- V2-M2-05 — Ledger integrity / concurrency gate — NOT STARTED
+
+### V2-M2-02 boundary
+
+The atomic posting engine is the single canonical application write path for future economic events:
+
+```text
+normalize + validate
+→ canonical economic evidence hash
+→ idempotency check
+→ SERIALIZABLE database transaction
+→ lock active IWC accounts
+→ create draft LedgerTransaction
+→ append LedgerEntry rows
+→ finalize posted
+→ commit
+```
+
+M2-02 deliberately does not claim a global transaction hash chain. `previousHash` remains unset by the posting engine until M2-05 introduces a serialized chain-head/concurrency invariant. This avoids creating a hash chain that can fork under concurrent writes.
 
 ## M3 — Task / Offer Protocol — NOT STARTED
 
