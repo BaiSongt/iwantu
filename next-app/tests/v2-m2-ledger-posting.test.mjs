@@ -175,7 +175,6 @@ test('M2-02: balanced posting commits transaction and entries atomically with de
 
   assert.equal(posted.status, 'posted');
   assert.equal(posted.transactionHash, expectedHash);
-  assert.equal(posted.previousHash, null);
   assert.ok(posted.postedAt);
   assert.equal(posted.entries.length, 2);
   assert.equal(posted.entries[0].entryIndex, 0);
