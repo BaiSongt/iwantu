@@ -54,6 +54,7 @@ Core invariants:
 - First-stage currency is closed-loop `IWC` only.
 - Escrow state changes must be backed by immutable ledger transactions.
 - Protected Principal and finite system accounts cannot become negative through the canonical posting path.
+- Balance-sensitive domain workflows delegate account locking and no-overdraft enforcement to the canonical posting engine, preserving one ledger-first lock order.
 - Every non-root posted ledger transaction has at most one successor through `previousHash`.
 - Protocol Incentive awards spend only from the finite Incentive pool.
 
@@ -63,7 +64,8 @@ Core invariants:
 - V2-M2-02 — Atomic posting engine — **COMPLETE** (`fb489b51`)
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
 - V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
-- V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (PR #15)
+- V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (`0566de9a`)
+- M2 closure hardening — canonical lock-order convergence — **ACTIVE**
 
 ### V2-M2-02 boundary
 
@@ -74,7 +76,9 @@ normalize + validate
 → canonical economic evidence hash
 → idempotency check
 → SERIALIZABLE database transaction
+→ serialize ledger head
 → lock active IWC accounts
+→ enforce protected-account no-overdraft
 → create draft LedgerTransaction
 → append LedgerEntry rows
 → finalize posted
@@ -111,7 +115,7 @@ refund:
   buyer Locked → buyer Available + Escrow refunded
 ```
 
-The ledger transaction and Escrow state change commit inside the same Serializable database transaction. Lock takes an exclusive account lock and checks the posted Available balance before moving Credit, so concurrent Escrow locks cannot overdraw the same buyer account. Release and refund lock the Escrow row so competing terminal actions resolve to exactly one outcome.
+The ledger transaction and Escrow state change commit inside the same Serializable database transaction. After M2-05, Escrow deliberately delegates account row locking and posted-balance/no-overdraft checks to the canonical posting engine rather than taking a second independent account-lock path. This preserves the Escrow domain error contract while avoiding lock-order inversion with ordinary ledger postings. Release and refund still lock the Escrow row so competing terminal actions resolve to exactly one outcome.
 
 Database invariants independently verify the exact lock/release/refund transaction type, reference, account direction and amount before accepting an Escrow lifecycle change. `contractId` remains an opaque protocol reference until the protocol-native Contract model exists; M2-04 does not introduce Contract early.
 
@@ -119,13 +123,16 @@ Database invariants independently verify the exact lock/release/refund transacti
 
 M2-05 closes the economic foundation with a general integrity and contention gate:
 
-- the canonical posting path takes exclusive locks on all participating accounts and rejects any posting that would make a protected Principal or finite system account negative;
+- the canonical posting path serializes the ledger head before taking participating account row locks;
+- the canonical posting path rejects any posting that would make a protected Principal or finite system account negative;
+- domain workflows that move Credit must reuse this posting path rather than establishing a competing account-lock order;
 - `system_reserve` remains the controlled issuance source and is deliberately not treated as a finite spend account;
 - a transaction-scoped PostgreSQL advisory lock serializes global ledger-head assignment;
 - every posted transaction records the current posted head in `previousHash` and a partial unique index prevents two successors from sharing one non-null predecessor hash;
 - standalone Serializable posting retries serialization and uniqueness races before failing closed;
 - Protocol Incentive awards debit only the finite `system_incentive` pool and preserve Credit provenance;
-- contention tests prove concurrent awards cannot over-spend the pool and database constraints reject ledger-chain forks.
+- contention tests prove concurrent awards cannot over-spend the pool and database constraints reject ledger-chain forks;
+- closure hardening adds mixed Escrow/direct-posting contention coverage and prevents duplicated pre-post account locking from being reintroduced.
 
 M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
 
