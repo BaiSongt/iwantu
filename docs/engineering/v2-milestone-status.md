@@ -55,6 +55,7 @@ Core invariants:
 - Escrow state changes must be backed by immutable ledger transactions.
 - Protected Principal and finite system accounts cannot become negative through the canonical posting path.
 - Balance-sensitive domain workflows delegate account locking and no-overdraft enforcement to the canonical posting engine, preserving one ledger-first lock order.
+- Canonical economic writes use one explicit concurrency model: Read Committed transactions behind a transaction-scoped global ledger advisory lock, followed by deterministic account row locks.
 - Every non-root posted ledger transaction has at most one posted successor through `previousHash`; draft work-in-progress cannot reserve a predecessor in the immutable chain.
 - Protocol Incentive awards spend only from the finite Incentive pool.
 
@@ -65,7 +66,7 @@ Core invariants:
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
 - V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
 - V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (`0566de9a`)
-- M2 closure hardening — canonical lock-order and posted-chain fork guard — **ACTIVE** (PR #16)
+- M2 closure hardening — canonical lock-order, posted-chain fork guard, and contention model — **ACTIVE** (PR #16)
 
 ### V2-M2-02 boundary
 
@@ -75,9 +76,9 @@ The atomic posting engine is the single canonical application write path for fut
 normalize + validate
 → canonical economic evidence hash
 → idempotency check
-→ SERIALIZABLE database transaction
-→ serialize ledger head
-→ lock active IWC accounts
+→ READ COMMITTED database transaction
+→ serialize ledger head with transaction-scoped advisory lock
+→ lock active IWC accounts in deterministic order
 → enforce protected-account no-overdraft
 → create draft LedgerTransaction
 → append LedgerEntry rows
@@ -86,6 +87,8 @@ normalize + validate
 ```
 
 M2-02 deliberately did not claim a global transaction hash chain. M2-05 now supplies the serialized chain-head/concurrency invariant without changing the canonical economic evidence hash introduced by M2-02.
+
+Read Committed is deliberate after M2-05. The global ledger advisory lock is the serialization primitive for canonical economic writes; account row locks then protect participating balances. Using PostgreSQL Serializable on top of the same global lock caused transactions waiting for the lock to retain stale serializable snapshots and enter avoidable `40001` retry storms under mixed contention. Read Committed lets each statement observe the latest committed ledger state after acquiring the global lock while the explicit lock order continues to guarantee chain-head and no-overdraft integrity.
 
 ### V2-M2-03 boundary
 
@@ -115,7 +118,7 @@ refund:
   buyer Locked → buyer Available + Escrow refunded
 ```
 
-The ledger transaction and Escrow state change commit inside the same Serializable database transaction. After M2-05, Escrow deliberately delegates account row locking and posted-balance/no-overdraft checks to the canonical posting engine rather than taking a second independent account-lock path. This preserves the Escrow domain error contract while avoiding lock-order inversion with ordinary ledger postings. Release and refund still lock the Escrow row so competing terminal actions resolve to exactly one outcome.
+The ledger transaction and Escrow state change commit inside the same database transaction governed by the canonical ledger concurrency model. After M2-05, Escrow deliberately delegates account row locking and posted-balance/no-overdraft checks to the canonical posting engine rather than taking a second independent account-lock path. This preserves the Escrow domain error contract while avoiding lock-order inversion with ordinary ledger postings. Release and refund still lock the Escrow row so competing terminal actions resolve to exactly one outcome.
 
 Database invariants independently verify the exact lock/release/refund transaction type, reference, account direction and amount before accepting an Escrow lifecycle change. `contractId` remains an opaque protocol reference until the protocol-native Contract model exists; M2-04 does not introduce Contract early.
 
@@ -123,17 +126,17 @@ Database invariants independently verify the exact lock/release/refund transacti
 
 M2-05 closes the economic foundation with a general integrity and contention gate:
 
-- the canonical posting path serializes the ledger head before taking participating account row locks;
+- the canonical posting path uses Read Committed transactions and serializes the ledger head before taking participating account row locks;
 - the canonical posting path rejects any posting that would make a protected Principal or finite system account negative;
 - domain workflows that move Credit must reuse this posting path rather than establishing a competing account-lock order;
 - `system_reserve` remains the controlled issuance source and is deliberately not treated as a finite spend account;
-- a transaction-scoped PostgreSQL advisory lock serializes global ledger-head assignment;
+- a transaction-scoped PostgreSQL advisory lock serializes global ledger-head assignment and all canonical economic writes;
 - every posted transaction records the current posted head in `previousHash`;
 - the posted-chain partial unique index permits draft work-in-progress but prevents two posted transactions from sharing one non-null predecessor hash;
-- standalone Serializable posting retries serialization and uniqueness races before failing closed;
+- bounded retries remain as defensive handling for database uniqueness/concurrency races, but correctness does not depend on serializable snapshot retries;
 - Protocol Incentive awards debit only the finite `system_incentive` pool and preserve Credit provenance;
 - contention tests prove concurrent awards cannot over-spend the pool and database constraints reject posted ledger-chain forks;
-- closure hardening adds mixed Escrow/direct-posting contention coverage, prevents duplicated pre-post account locking from being reintroduced, and prevents draft rows from poisoning the current ledger head.
+- closure hardening adds mixed Escrow/direct-posting contention coverage, prevents duplicated pre-post account locking from being reintroduced, prevents draft rows from poisoning the current ledger head, and locks the advisory-lock + Read Committed concurrency model into CI.
 
 M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
 
