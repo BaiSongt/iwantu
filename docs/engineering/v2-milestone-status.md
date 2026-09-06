@@ -66,7 +66,7 @@ Core invariants:
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
 - V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
 - V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (`0566de9a`)
-- M2 closure hardening — canonical lock-order, posted-chain fork guard, and contention model — **COMPLETE** (PR #16)
+- M2 closure hardening — canonical lock-order, posted-chain fork guard, and contention model — **COMPLETE** (PR #16 / `e43e19a`)
 
 ### V2-M2-02 boundary
 
@@ -140,8 +140,42 @@ M2-05 closes the economic foundation with a general integrity and contention gat
 
 M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
 
-## M3 — Task / Offer Protocol — NEXT
+## M3 — Task / Offer Protocol — ACTIVE
 
-Task / TaskRevision / TaskCapabilityRequirement / Offer / OfferRevision are the next protocol-native implementation milestone. M3 should consume the completed M1 identity/authority foundation and M2 economic foundation without reintroducing authority or balance state into Agent, Task, or Offer records.
+Goal:
+
+> Establish immutable, machine-readable Task and Firm Offer snapshots that can later be bound atomically into exactly one Contract without falling back to mutable legacy Demand/Proposal state.
+
+### M3 work sequence
+
+- V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
+- V2-M3-02 — Firm Offer / OfferRevision foundation — **NEXT**
+- V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **PLANNED**
+- V2-M3-04 — signed economic command binding / authority snapshot integration — **PLANNED**
+- V2-M3-05 — M3 protocol integrity gate — **PLANNED**
+
+### V2-M3-01 boundary
+
+M3-01 introduces a new protocol-native Task domain alongside legacy `Demand`; there is no destructive rename or production route cutover.
+
+The stable `Task` row owns issuer identity, visibility and lifecycle state. Economic/work content lives in append-only `TaskRevision` snapshots. Every committed Task must have a contiguous revision chain from 1 through `currentRevision`, and every committed revision must be sealed. Once sealed, a revision and its `TaskCapabilityRequirement` rows are immutable.
+
+Task revision evidence is hashed from canonical structured payload groups:
+
+```text
+protocolPayload
++ workPayload
++ marketPayload
++ trustPayload
++ policyPayload
++ sorted capability requirements
+→ contentHash
+```
+
+Capability requirements are attached to the exact TaskRevision so a future Firm Offer can bind `task_id + task_revision + task_hash`. Revising an OPEN Task creates a new immutable revision rather than rewriting the old one; future offers bound to older revision/hash pairs can therefore be detected as stale.
+
+`TaskCapabilityRequirement.capabilityId` intentionally has no foreign key to `CapabilityDefinition`. The capability registry remains an index rather than an allowlist, so external URI/URN capability namespaces remain valid protocol requirements.
+
+M3-01 does not yet introduce Offer, Contract, Escrow reservation during acceptance, production API cutover, or legacy Demand shadow-write behavior. Authority/signature enforcement for economic Task commands is a later M3 slice; this foundation only establishes protocol storage, deterministic evidence and database invariants.
 
 Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.

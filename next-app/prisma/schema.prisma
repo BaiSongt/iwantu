@@ -167,6 +167,21 @@ enum CapabilityClaimStatus {
   verified
 }
 
+// v2 Task / Offer protocol enums.
+enum TaskStatus {
+  draft
+  open
+  awarded
+  closed
+  cancelled
+}
+
+enum TaskVisibility {
+  public
+  unlisted
+  private
+}
+
 // v2 Economy & Ledger domain enums.
 enum LedgerAccountType {
   principal_available
@@ -302,6 +317,7 @@ model Principal {
   issuedMandates     Mandate[]           @relation("MandateIssuerPrincipal")
   mandateRevocations MandateRevocation[] @relation("MandateRevokedByPrincipal")
   ledgerAccounts     LedgerAccount[]
+  issuedTasks        Task[]              @relation("TaskIssuerPrincipal")
 
   @@index([type, status])
   @@map("principals")
@@ -323,6 +339,7 @@ model AgentIdentity {
   credentials        AgentCredential[]
   mandates           Mandate[]        @relation("MandateSubjectAgent")
   delegatedMandates  Mandate[]        @relation("MandateDelegatingAgent")
+  issuedTasks        Task[]           @relation("TaskIssuerAgent")
 
   @@index([principalId, status])
   @@map("agent_identities")
@@ -514,6 +531,67 @@ model AgentMarketProfile {
 
   @@index([availability, acceptsPublicTasks])
   @@map("agent_market_profiles")
+}
+
+// ============================================
+// v2 Task Protocol Foundation (M3-01)
+// ============================================
+
+model Task {
+  id                    String         @id @default(cuid())
+  issuerPrincipalId     String
+  issuerAgentIdentityId String
+  status                TaskStatus     @default(draft)
+  visibility            TaskVisibility @default(public)
+  currentRevision       Int            @default(1)
+  createdAt             DateTime       @default(now())
+  openedAt              DateTime?
+  closedAt              DateTime?
+
+  issuerPrincipal Principal     @relation("TaskIssuerPrincipal", fields: [issuerPrincipalId], references: [id], onDelete: Restrict)
+  issuerAgent     AgentIdentity @relation("TaskIssuerAgent", fields: [issuerAgentIdentityId], references: [id], onDelete: Restrict)
+  revisions       TaskRevision[]
+
+  @@index([issuerPrincipalId, status, createdAt])
+  @@index([issuerAgentIdentityId, status])
+  @@index([visibility, status, createdAt])
+  @@map("tasks")
+}
+
+model TaskRevision {
+  id              String   @id @default(cuid())
+  taskId          String
+  revision        Int
+  contentHash     String
+  protocolPayload Json
+  workPayload     Json
+  marketPayload   Json
+  trustPayload    Json
+  policyPayload   Json
+  createdAt       DateTime @default(now())
+  sealedAt        DateTime?
+
+  task                   Task                        @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  capabilityRequirements TaskCapabilityRequirement[]
+
+  @@unique([taskId, revision])
+  @@unique([taskId, contentHash])
+  @@index([taskId, createdAt])
+  @@map("task_revisions")
+}
+
+model TaskCapabilityRequirement {
+  id                 String   @id @default(cuid())
+  taskRevisionId     String
+  capabilityId       String
+  requirementPayload Json?
+  createdAt          DateTime @default(now())
+
+  taskRevision TaskRevision @relation(fields: [taskRevisionId], references: [id], onDelete: Restrict)
+
+  @@unique([taskRevisionId, capabilityId])
+  @@index([capabilityId, taskRevisionId])
+  @@map("task_capability_requirements")
 }
 
 // ============================================
