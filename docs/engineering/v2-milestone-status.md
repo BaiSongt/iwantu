@@ -149,8 +149,8 @@ Goal:
 ### M3 work sequence
 
 - V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
-- V2-M3-02 — Firm Offer / OfferRevision foundation — **NEXT**
-- V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **PLANNED**
+- V2-M3-02 — Firm Offer / OfferRevision foundation — **ACTIVE**
+- V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **NEXT**
 - V2-M3-04 — signed economic command binding / authority snapshot integration — **PLANNED**
 - V2-M3-05 — M3 protocol integrity gate — **PLANNED**
 
@@ -177,5 +177,33 @@ Capability requirements are attached to the exact TaskRevision so a future Firm 
 `TaskCapabilityRequirement.capabilityId` intentionally has no foreign key to `CapabilityDefinition`. The capability registry remains an index rather than an allowlist, so external URI/URN capability namespaces remain valid protocol requirements.
 
 M3-01 does not yet introduce Offer, Contract, Escrow reservation during acceptance, production API cutover, or legacy Demand shadow-write behavior. Authority/signature enforcement for economic Task commands is a later M3 slice; this foundation only establishes protocol storage, deterministic evidence and database invariants.
+
+### V2-M3-02 boundary
+
+M3-02 introduces protocol-native `Offer` and immutable `OfferRevision` alongside legacy `Proposal`. A2A conversation and indicative quotes remain non-binding; the Offer aggregate is reserved for Firm Offer commitment evidence.
+
+Each Offer chain is unique per `(taskId, supplierPrincipalId)` in the MVP. A revision binds:
+
+```text
+task id
++ exact sealed TaskRevision id / revision / taskHash
++ offer revision
++ IWC price
++ optional delivery commitment
++ finite validUntil
++ canonical terms payload / termsHash
++ supplier Principal / Agent
++ supplier AuthoritySnapshot reference
++ nonce
+→ offerHash
+```
+
+`OfferRevision` rows are append-only. Supplier term changes create a new revision while preserving older evidence. Revision allocation locks the stable Offer row so concurrent revisions form a contiguous chain rather than duplicate revision numbers.
+
+Database triggers independently require the referenced TaskRevision to belong to the Offer Task and match `taskHash`, and require the AuthoritySnapshot to belong to the same supplier Principal/Agent. The snapshot is historical evidence only; it is not reused as live authority for a future command.
+
+M3-02 stores signature algorithm/key/signature material as commitment evidence, but does **not** yet claim cryptographic signature verification or live Mandate authorization at the command boundary. Those controls remain M3-04. Similarly, Withdraw/Accept/Not Selected lifecycle semantics and stale-offer acceptance rules are completed in M3-03.
+
+No Contract, Escrow reservation during acceptance, production route cutover, or legacy Proposal shadow write is introduced in M3-02.
 
 Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.
