@@ -123,9 +123,7 @@ export function normalizeFirmOfferTerms(input, now = new Date()) {
   return {
     priceAmount: normalizeOfferAmount(input.priceAmount),
     currency,
-    deliveryCommitmentSeconds: normalizeDeliveryCommitmentSeconds(
-      input.deliveryCommitmentSeconds,
-    ),
+    deliveryCommitmentSeconds: normalizeDeliveryCommitmentSeconds(input.deliveryCommitmentSeconds),
     validUntil: normalizeValidUntil(input.validUntil, now),
     termsPayload: normalizeJsonObject(input.termsPayload, 'termsPayload'),
     nonce: nonEmpty(input.nonce, 'nonce'),
@@ -264,6 +262,20 @@ async function lockOpenTaskAndCurrentRevision(tx, taskId) {
   return { task, revision };
 }
 
+async function readOfferEnvelope(tx, offerId) {
+  return tx.offer.findUnique({
+    where: { id: offerId },
+    select: {
+      id: true,
+      taskId: true,
+      supplierPrincipalId: true,
+      supplierAgentIdentityId: true,
+      status: true,
+      currentRevision: true,
+    },
+  });
+}
+
 async function lockOffer(tx, offerId) {
   const rows = await tx.$queryRaw(
     Prisma.sql`
@@ -331,10 +343,7 @@ export async function issueFirmOffer(prisma, input, options = {}) {
   }
   const taskId = nonEmpty(input.taskId, 'taskId');
   const supplierPrincipalId = nonEmpty(input.supplierPrincipalId, 'supplierPrincipalId');
-  const supplierAgentIdentityId = nonEmpty(
-    input.supplierAgentIdentityId,
-    'supplierAgentIdentityId',
-  );
+  const supplierAgentIdentityId = nonEmpty(input.supplierAgentIdentityId, 'supplierAgentIdentityId');
   const normalized = normalizeFirmOfferTerms(input, options.now ?? new Date());
 
   try {
@@ -387,8 +396,17 @@ export async function reviseFirmOffer(prisma, input, options = {}) {
 
   try {
     return await prisma.$transaction(async (tx) => {
+      // Global M3 lock order is Task -> Offer. Read the immutable Offer taskId first,
+      // then take the Task shared lock before the Offer update lock. Task lifecycle
+      // transitions take Task FOR UPDATE and then Offer locks, so both paths agree.
+      const envelope = await readOfferEnvelope(tx, offerId);
+      if (!envelope) deny('OFFER_NOT_FOUND', 'Offer does not exist', { offerId });
+      const { revision: taskRevision } = await lockOpenTaskAndCurrentRevision(tx, envelope.taskId);
       const offer = await lockOffer(tx, offerId);
       if (!offer) deny('OFFER_NOT_FOUND', 'Offer does not exist', { offerId });
+      if (offer.taskId !== envelope.taskId) {
+        deny('OFFER_TASK_BINDING_CHANGED', 'Offer task binding changed unexpectedly', { offerId });
+      }
       if (offer.status !== 'active') {
         deny('OFFER_NOT_REVISIONABLE', 'Only an active Firm Offer can be revised', {
           offerId,
@@ -397,7 +415,6 @@ export async function reviseFirmOffer(prisma, input, options = {}) {
       }
 
       await requireActiveSupplier(tx, offer.supplierPrincipalId, offer.supplierAgentIdentityId);
-      const { revision: taskRevision } = await lockOpenTaskAndCurrentRevision(tx, offer.taskId);
       const revisionNumber = offer.currentRevision + 1;
       const revision = await createOfferRevision(
         tx,
