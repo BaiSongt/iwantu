@@ -66,7 +66,7 @@ Core invariants:
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
 - V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
 - V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (`0566de9a`)
-- M2 closure hardening — canonical lock-order, posted-chain fork guard, and contention model — **ACTIVE** (PR #16)
+- M2 closure hardening — canonical lock-order, posted-chain fork guard, and contention model — **COMPLETE** (PR #16)
 
 ### V2-M2-02 boundary
 
