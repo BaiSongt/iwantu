@@ -1,6 +1,6 @@
 # V2-M3-03 — Task / Offer Lifecycle & Eligibility Gate
 
-Status: ACTIVE
+Status: COMPLETE
 
 ## Goal
 
@@ -66,6 +66,22 @@ Task row
 ```
 
 Offer revision was changed to follow the same order. This prevents lifecycle operations (`cancel/close`) from introducing Task/Offer lock inversion against concurrent Offer revision.
+
+## Verification closure
+
+PR #19 CI verified:
+
+- 17 migrations clean deploy;
+- all M1/M2/M3 invariant suites;
+- exact Offer hash / revision / TTL evaluation;
+- derived stale detection and Supplier rebind;
+- capability eligibility using one complete non-retired AgentVersion;
+- terminal lifecycle and deferred Task/Offer consistency;
+- Task cancel vs Offer revise concurrency;
+- Offer withdraw vs Offer revise concurrency;
+- M1/M2/M3 lint, typecheck and production build.
+
+The first CI run exposed only a test-clock mismatch: the test supplied a historical service `now` while PostgreSQL correctly used real `createdAt`. The test was corrected to issue against the real current clock and evaluate exactly at `validUntil`; protocol and database TTL constraints were not weakened.
 
 ## Explicit boundary
 
