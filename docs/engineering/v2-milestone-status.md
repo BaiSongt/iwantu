@@ -150,8 +150,8 @@ Goal:
 
 - V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
 - V2-M3-02 — Firm Offer / OfferRevision foundation — **COMPLETE** (PR #18)
-- V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **NEXT**
-- V2-M3-04 — signed economic command binding / authority snapshot integration — **PLANNED**
+- V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **COMPLETE** (PR #19)
+- V2-M3-04 — signed economic command binding / authority snapshot integration — **NEXT**
 - V2-M3-05 — M3 protocol integrity gate — **PLANNED**
 
 ### V2-M3-01 boundary
@@ -205,5 +205,32 @@ Database triggers independently require the referenced TaskRevision to belong to
 M3-02 stores signature algorithm/key/signature material as commitment evidence, but does **not** yet claim cryptographic signature verification or live Mandate authorization at the command boundary. Those controls remain M3-04. Similarly, Withdraw/Accept/Not Selected lifecycle semantics and stale-offer acceptance rules are completed in M3-03.
 
 No Contract, Escrow reservation during acceptance, production route cutover, or legacy Proposal shadow write is introduced in M3-02.
+
+### V2-M3-03 boundary
+
+M3-03 turns Task/Offer snapshots into a deterministic pre-formation state and eligibility layer.
+
+Lifecycle writes now enforce:
+
+```text
+Task:  draft -> open
+       draft/open -> cancelled
+       open -> closed
+
+Offer: active -> withdrawn
+       active -> closed
+```
+
+Task `awarded` and Offer `accepted` / `not_selected` remain reserved for future atomic Contract Formation and are rejected by ordinary database writes. A deferred database consistency gate requires that a non-OPEN Task cannot commit while retaining ACTIVE Offers. Task cancellation or ordinary closure therefore closes active Offer chains in the same transaction.
+
+Firm Offer staleness is derived rather than stored: the exact OfferRevision TaskRevision/hash must still equal the Task's current sealed revision/hash. No mutable `isStale` field is introduced.
+
+`evaluateFirmOfferAcceptability()` evaluates an exact `offerId + revision + offerHash` and fails closed on Task lifecycle, Offer lifecycle, supersession, evidence-hash mismatch, TTL expiry, Task revision drift, inactive Supplier Principal/Agent, and capability mismatch.
+
+Capability eligibility requires at least one non-retired AgentVersion of the Supplier AgentIdentity to satisfy the complete current Task capability requirement set. Claims are matched by exact capability id; both `declared` and `verified` claims establish capability presence in M3-03, while stronger trust/reputation semantics remain separate.
+
+All M3 Task/Offer state mutations now share a `Task -> Offer(s)` row-lock order. This prevents cancellation/closure from introducing lock inversion against concurrent Offer revision or withdrawal.
+
+M3-03 does not form a Contract, reserve Escrow, move Ledger value, verify the buyer acceptance signature, reuse AuthoritySnapshot as live authority, or cut over legacy Demand/Proposal production routes. Those controls remain M3-04 and later slices.
 
 Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.
