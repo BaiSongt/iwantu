@@ -130,61 +130,6 @@ async function loadPrincipalLockedAccount(tx, principalId) {
   return account;
 }
 
-async function lockAccountsForUpdate(tx, accountIds) {
-  const ids = [...new Set(accountIds)].sort();
-  const rows = await tx.$queryRaw(
-    Prisma.sql`
-      SELECT "id", "principalId", "type", "status", "currency"
-      FROM "ledger_accounts"
-      WHERE "id" IN (${Prisma.join(ids)})
-      ORDER BY "id"
-      FOR UPDATE
-    `,
-  );
-  if (rows.length !== ids.length) {
-    const found = new Set(rows.map((row) => row.id));
-    deny('ESCROW_ACCOUNT_NOT_FOUND', 'One or more Escrow accounts do not exist', {
-      accountIds: ids.filter((id) => !found.has(id)),
-    });
-  }
-  for (const row of rows) {
-    if (row.status !== 'active' || row.currency !== 'IWC') {
-      deny('ESCROW_ACCOUNT_INACTIVE', 'Escrow movement requires active IWC accounts', {
-        accountId: row.id,
-        status: row.status,
-        currency: row.currency,
-      });
-    }
-  }
-  return rows;
-}
-
-async function assertSufficientPostedBalance(tx, accountId, amountDecimal) {
-  const rows = await tx.$queryRaw(
-    Prisma.sql`
-      SELECT
-        COALESCE(SUM(
-          CASE WHEN e."side" = 'credit' THEN e."amount" ELSE -e."amount" END
-        ), 0)::text AS "balance",
-        COALESCE(SUM(
-          CASE WHEN e."side" = 'credit' THEN e."amount" ELSE -e."amount" END
-        ), 0) >= CAST(${amountDecimal} AS DECIMAL(36,8)) AS "sufficient"
-      FROM "ledger_entries" e
-      JOIN "ledger_transactions" t ON t."id" = e."transactionId"
-      WHERE e."accountId" = ${accountId}
-        AND t."status" = 'posted'
-    `,
-  );
-  const state = rows[0];
-  if (!state?.sufficient) {
-    deny('ESCROW_INSUFFICIENT_FUNDS', 'Ledger account has insufficient posted balance', {
-      accountId,
-      requiredAmount: amountDecimal,
-      availableBalance: state?.balance ?? '0',
-    });
-  }
-}
-
 function normalizeEscrowAmount(value) {
   return normalizeLedgerAmount(value).decimal;
 }
@@ -289,14 +234,27 @@ function refundPostingInput({
   };
 }
 
-async function runSerializable(prisma, work, options = {}) {
+async function postEscrowMovement(tx, postingInput) {
+  try {
+    return await postLedgerTransactionInTransaction(tx, postingInput);
+  } catch (error) {
+    if (error instanceof LedgerPostingError && error.code === 'LEDGER_ACCOUNT_OVERDRAFT') {
+      deny('ESCROW_INSUFFICIENT_FUNDS', 'Escrow movement has insufficient posted balance', {
+        ...(error.details ?? {}),
+      });
+    }
+    throw error;
+  }
+}
+
+async function runEscrowTransaction(prisma, work, options = {}) {
   const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0
     ? options.maxRetries
     : 3;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
       return await prisma.$transaction(work, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       });
     } catch (error) {
       if (error instanceof EscrowPrimitiveError || error instanceof LedgerPostingError) throw error;
@@ -306,7 +264,7 @@ async function runSerializable(prisma, work, options = {}) {
         continue;
       }
       if (serializationFailure) {
-        deny('ESCROW_CONCURRENCY_RETRY_EXHAUSTED', 'Escrow serialization retries exhausted');
+        deny('ESCROW_CONCURRENCY_RETRY_EXHAUSTED', 'Escrow concurrency retries exhausted');
       }
       throw error;
     }
@@ -347,7 +305,7 @@ export async function lockEscrow(prisma, input, options = {}) {
     metadata: input.metadata,
   });
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     await requireActivePrincipal(tx, buyerPrincipalId);
     const existing = await loadEscrowForUpdate(tx, contractId);
     if (existing) {
@@ -357,14 +315,12 @@ export async function lockEscrow(prisma, input, options = {}) {
         availableAccountId: availableAccount.id,
         amount,
       });
-      const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+      const ledgerTransaction = await postEscrowMovement(tx, postingInput);
       const escrow = await tx.escrow.findUnique({ where: { id: existing.id } });
       return { escrow, ledgerTransaction };
     }
 
-    await lockAccountsForUpdate(tx, [availableAccount.id, lockedAccount.id]);
-    await assertSufficientPostedBalance(tx, availableAccount.id, amount);
-    const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+    const ledgerTransaction = await postEscrowMovement(tx, postingInput);
     const escrow = await tx.escrow.create({
       data: {
         contractId,
@@ -390,7 +346,7 @@ export async function releaseEscrow(prisma, input, options = {}) {
   );
   const recipientAccounts = await ensurePrincipalLedgerAccounts(prisma, recipientPrincipalId);
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     await requireActivePrincipal(tx, recipientPrincipalId);
     await requireAgentAttribution(tx, earnedByAgentIdentityId, recipientPrincipalId);
     const existing = await loadEscrowForUpdate(tx, contractId);
@@ -415,14 +371,12 @@ export async function releaseEscrow(prisma, input, options = {}) {
     });
 
     if (existing.status === 'released') {
-      const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+      const ledgerTransaction = await postEscrowMovement(tx, postingInput);
       const escrow = await tx.escrow.findUnique({ where: { id: existing.id } });
       return { escrow, ledgerTransaction };
     }
 
-    await lockAccountsForUpdate(tx, [lockedAccount.id, recipientAccounts.principal_available.id]);
-    await assertSufficientPostedBalance(tx, lockedAccount.id, amount);
-    const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+    const ledgerTransaction = await postEscrowMovement(tx, postingInput);
     const escrow = await tx.escrow.update({
       where: { id: existing.id },
       data: {
@@ -441,7 +395,7 @@ export async function refundEscrow(prisma, input, options = {}) {
   }
   const contractId = nonEmpty(input.contractId, 'contractId');
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     const existing = await loadEscrowForUpdate(tx, contractId);
     if (!existing) {
       deny('ESCROW_NOT_FOUND', 'Escrow does not exist', { contractId });
@@ -463,14 +417,12 @@ export async function refundEscrow(prisma, input, options = {}) {
     });
 
     if (existing.status === 'refunded') {
-      const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+      const ledgerTransaction = await postEscrowMovement(tx, postingInput);
       const escrow = await tx.escrow.findUnique({ where: { id: existing.id } });
       return { escrow, ledgerTransaction };
     }
 
-    await lockAccountsForUpdate(tx, [existing.buyerAccountId, lockedAccount.id]);
-    await assertSufficientPostedBalance(tx, lockedAccount.id, amount);
-    const ledgerTransaction = await postLedgerTransactionInTransaction(tx, postingInput);
+    const ledgerTransaction = await postEscrowMovement(tx, postingInput);
     const escrow = await tx.escrow.update({
       where: { id: existing.id },
       data: {
