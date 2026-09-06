@@ -267,7 +267,7 @@ function verifyExistingTransaction(existing, expectedHash) {
 }
 
 async function acquireLedgerChainLock(tx) {
-  await tx.$queryRaw(
+  await tx.$executeRaw(
     Prisma.sql`SELECT pg_advisory_xact_lock(${LEDGER_CHAIN_ADVISORY_LOCK_KEY}::bigint)`,
   );
 }
@@ -450,7 +450,9 @@ export async function postLedgerTransaction(prisma, input, options = {}) {
       const raced = await loadTransactionByIdempotency(prisma, normalized.idempotencyKey);
       if (raced) return verifyExistingTransaction(raced, expectedHash);
 
-      if (isPrismaCode(error, 'P2034') && attempt < maxRetries) continue;
+      if ((isPrismaCode(error, 'P2034') || isPrismaCode(error, 'P2002')) && attempt < maxRetries) {
+        continue;
+      }
       if (isPrismaCode(error, 'P2034')) {
         deny('LEDGER_CONCURRENCY_RETRY_EXHAUSTED', 'Ledger posting serialization retries exhausted', {
           idempotencyKey: normalized.idempotencyKey,
