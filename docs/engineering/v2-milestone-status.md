@@ -55,7 +55,7 @@ Core invariants:
 - Escrow state changes must be backed by immutable ledger transactions.
 - Protected Principal and finite system accounts cannot become negative through the canonical posting path.
 - Balance-sensitive domain workflows delegate account locking and no-overdraft enforcement to the canonical posting engine, preserving one ledger-first lock order.
-- Every non-root posted ledger transaction has at most one successor through `previousHash`.
+- Every non-root posted ledger transaction has at most one posted successor through `previousHash`; draft work-in-progress cannot reserve a predecessor in the immutable chain.
 - Protocol Incentive awards spend only from the finite Incentive pool.
 
 ### M2 work sequence
@@ -65,7 +65,7 @@ Core invariants:
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
 - V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
 - V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (`0566de9a`)
-- M2 closure hardening — canonical lock-order convergence — **ACTIVE**
+- M2 closure hardening — canonical lock-order and posted-chain fork guard — **ACTIVE** (PR #16)
 
 ### V2-M2-02 boundary
 
@@ -128,11 +128,12 @@ M2-05 closes the economic foundation with a general integrity and contention gat
 - domain workflows that move Credit must reuse this posting path rather than establishing a competing account-lock order;
 - `system_reserve` remains the controlled issuance source and is deliberately not treated as a finite spend account;
 - a transaction-scoped PostgreSQL advisory lock serializes global ledger-head assignment;
-- every posted transaction records the current posted head in `previousHash` and a partial unique index prevents two successors from sharing one non-null predecessor hash;
+- every posted transaction records the current posted head in `previousHash`;
+- the posted-chain partial unique index permits draft work-in-progress but prevents two posted transactions from sharing one non-null predecessor hash;
 - standalone Serializable posting retries serialization and uniqueness races before failing closed;
 - Protocol Incentive awards debit only the finite `system_incentive` pool and preserve Credit provenance;
-- contention tests prove concurrent awards cannot over-spend the pool and database constraints reject ledger-chain forks;
-- closure hardening adds mixed Escrow/direct-posting contention coverage and prevents duplicated pre-post account locking from being reintroduced.
+- contention tests prove concurrent awards cannot over-spend the pool and database constraints reject posted ledger-chain forks;
+- closure hardening adds mixed Escrow/direct-posting contention coverage, prevents duplicated pre-post account locking from being reintroduced, and prevents draft rows from poisoning the current ledger head.
 
 M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
 
