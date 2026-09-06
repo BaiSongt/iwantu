@@ -18,7 +18,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "v2:m1:backfill-principals": "node prisma/backfill-v2-m1-principals.mjs",
-    "prisma:studio": "tsx prisma/seed.ts"
+    "prisma:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
