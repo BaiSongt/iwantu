@@ -247,14 +247,14 @@ async function postEscrowMovement(tx, postingInput) {
   }
 }
 
-async function runSerializable(prisma, work, options = {}) {
+async function runEscrowTransaction(prisma, work, options = {}) {
   const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0
     ? options.maxRetries
     : 3;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
       return await prisma.$transaction(work, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       });
     } catch (error) {
       if (error instanceof EscrowPrimitiveError || error instanceof LedgerPostingError) throw error;
@@ -264,7 +264,7 @@ async function runSerializable(prisma, work, options = {}) {
         continue;
       }
       if (serializationFailure) {
-        deny('ESCROW_CONCURRENCY_RETRY_EXHAUSTED', 'Escrow serialization retries exhausted');
+        deny('ESCROW_CONCURRENCY_RETRY_EXHAUSTED', 'Escrow concurrency retries exhausted');
       }
       throw error;
     }
@@ -305,7 +305,7 @@ export async function lockEscrow(prisma, input, options = {}) {
     metadata: input.metadata,
   });
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     await requireActivePrincipal(tx, buyerPrincipalId);
     const existing = await loadEscrowForUpdate(tx, contractId);
     if (existing) {
@@ -346,7 +346,7 @@ export async function releaseEscrow(prisma, input, options = {}) {
   );
   const recipientAccounts = await ensurePrincipalLedgerAccounts(prisma, recipientPrincipalId);
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     await requireActivePrincipal(tx, recipientPrincipalId);
     await requireAgentAttribution(tx, earnedByAgentIdentityId, recipientPrincipalId);
     const existing = await loadEscrowForUpdate(tx, contractId);
@@ -395,7 +395,7 @@ export async function refundEscrow(prisma, input, options = {}) {
   }
   const contractId = nonEmpty(input.contractId, 'contractId');
 
-  return runSerializable(prisma, async (tx) => {
+  return runEscrowTransaction(prisma, async (tx) => {
     const existing = await loadEscrowForUpdate(tx, contractId);
     if (!existing) {
       deny('ESCROW_NOT_FOUND', 'Escrow does not exist', { contractId });
