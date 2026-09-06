@@ -442,7 +442,7 @@ export async function postLedgerTransaction(prisma, input, options = {}) {
     try {
       return await prisma.$transaction(
         (tx) => postNormalizedWithinTransaction(tx, normalized, expectedHash),
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
       );
     } catch (error) {
       if (error instanceof LedgerPostingError) throw error;
@@ -454,7 +454,7 @@ export async function postLedgerTransaction(prisma, input, options = {}) {
         continue;
       }
       if (isPrismaCode(error, 'P2034')) {
-        deny('LEDGER_CONCURRENCY_RETRY_EXHAUSTED', 'Ledger posting serialization retries exhausted', {
+        deny('LEDGER_CONCURRENCY_RETRY_EXHAUSTED', 'Ledger posting concurrency retries exhausted', {
           idempotencyKey: normalized.idempotencyKey,
           attempts: maxRetries + 1,
         });
