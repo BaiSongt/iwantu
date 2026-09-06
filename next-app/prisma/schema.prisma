@@ -182,6 +182,14 @@ enum TaskVisibility {
   private
 }
 
+enum OfferStatus {
+  active
+  accepted
+  withdrawn
+  not_selected
+  closed
+}
+
 // v2 Economy & Ledger domain enums.
 enum LedgerAccountType {
   principal_available
@@ -592,6 +600,53 @@ model TaskCapabilityRequirement {
   @@unique([taskRevisionId, capabilityId])
   @@index([capabilityId, taskRevisionId])
   @@map("task_capability_requirements")
+}
+
+// ============================================
+// v2 Firm Offer Protocol Foundation (M3-02)
+// ============================================
+
+model Offer {
+  id                      String      @id @default(cuid())
+  taskId                  String
+  supplierPrincipalId     String
+  supplierAgentIdentityId String
+  status                  OfferStatus @default(active)
+  currentRevision         Int         @default(1)
+  createdAt               DateTime    @default(now())
+
+  @@unique([taskId, supplierPrincipalId])
+  @@index([taskId, status, createdAt])
+  @@index([supplierPrincipalId, status])
+  @@index([supplierAgentIdentityId, status])
+  @@map("offers")
+}
+
+model OfferRevision {
+  id                          String   @id @default(cuid())
+  offerId                     String
+  revision                    Int
+  taskRevisionId              String
+  taskHash                    String
+  priceAmount                 Decimal  @db.Decimal(36, 8)
+  currency                    String   @default("IWC")
+  deliveryCommitmentSeconds   Int?
+  validUntil                  DateTime
+  termsPayload                Json
+  termsHash                   String
+  nonce                       String   @unique
+  offerHash                   String   @unique
+  supplierAuthoritySnapshotId String
+  signatureAlgorithm          String
+  signatureKeyId              String
+  supplierSignature           String
+  createdAt                   DateTime @default(now())
+
+  @@unique([offerId, revision])
+  @@index([taskRevisionId])
+  @@index([validUntil])
+  @@index([supplierAuthoritySnapshotId])
+  @@map("offer_revisions")
 }
 
 // ============================================
