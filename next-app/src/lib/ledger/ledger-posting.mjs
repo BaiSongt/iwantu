@@ -5,6 +5,7 @@ const POSTING_PROTOCOL_VERSION = 'iwantu-ledger-posting/0.1';
 const SCALE = 100_000_000n;
 const MAX_INTEGER_DIGITS = 28;
 const MAX_FRACTION_DIGITS = 8;
+const LEDGER_CHAIN_ADVISORY_LOCK_KEY = 4_921_178_337;
 const TRANSACTION_TYPES = new Set([
   'genesis',
   'purchased_credit',
@@ -17,6 +18,14 @@ const TRANSACTION_TYPES = new Set([
   'reserve',
 ]);
 const ENTRY_SIDES = new Set(['debit', 'credit']);
+const NO_OVERDRAFT_ACCOUNT_TYPES = new Set([
+  'principal_available',
+  'principal_locked',
+  'principal_pending',
+  'system_clearing',
+  'system_fee',
+  'system_incentive',
+]);
 
 export class LedgerPostingError extends Error {
   constructor(code, message, details = undefined) {
@@ -82,6 +91,17 @@ function amountInputToString(value) {
   deny('LEDGER_AMOUNT_INVALID', 'Ledger entry amount must be a decimal string or finite number');
 }
 
+function decimalValueToMinorUnits(value) {
+  const raw = String(value);
+  const match = raw.match(/^(-?)(\d+)(?:\.(\d{1,8}))?$/);
+  if (!match) {
+    deny('LEDGER_BALANCE_INVALID', 'Stored ledger balance is not a supported decimal value', { value: raw });
+  }
+  const fraction = (match[3] ?? '').padEnd(MAX_FRACTION_DIGITS, '0');
+  const units = BigInt(match[2]) * SCALE + BigInt(fraction);
+  return match[1] === '-' ? -units : units;
+}
+
 export function normalizeLedgerAmount(value) {
   const raw = amountInputToString(value);
   const match = raw.match(new RegExp(`^(0|[1-9]\\d{0,${MAX_INTEGER_DIGITS - 1}})(?:\\.(\\d{1,${MAX_FRACTION_DIGITS}}))?$`));
@@ -143,6 +163,7 @@ export function normalizeLedgerPostingInput(input) {
       accountId,
       side,
       amount: amount.decimal,
+      amountMinorUnits: amount.minorUnits,
       provenance: normalizeJsonValue(entry.provenance ?? null, `entries[${entryIndex}].provenance`),
     };
   });
@@ -245,15 +266,29 @@ function verifyExistingTransaction(existing, expectedHash) {
   return existing;
 }
 
+async function acquireLedgerChainLock(tx) {
+  await tx.$queryRaw(
+    Prisma.sql`SELECT pg_advisory_xact_lock(${LEDGER_CHAIN_ADVISORY_LOCK_KEY}::bigint)`,
+  );
+}
+
+async function loadLedgerChainHead(tx) {
+  return tx.ledgerTransaction.findFirst({
+    where: { status: 'posted', transactionHash: { not: null } },
+    orderBy: [{ postedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    select: { transactionHash: true },
+  });
+}
+
 async function lockAndValidateAccounts(tx, normalized) {
   const accountIds = [...new Set(normalized.entries.map((entry) => entry.accountId))].sort();
   const rows = await tx.$queryRaw(
     Prisma.sql`
-      SELECT "id", "status", "currency"
+      SELECT "id", "status", "currency", "type"
       FROM "ledger_accounts"
       WHERE "id" IN (${Prisma.join(accountIds)})
       ORDER BY "id"
-      FOR SHARE
+      FOR UPDATE
     `,
   );
 
@@ -264,6 +299,7 @@ async function lockAndValidateAccounts(tx, normalized) {
     });
   }
 
+  const rowById = new Map(rows.map((row) => [row.id, row]));
   for (const row of rows) {
     if (row.currency !== 'IWC') {
       deny('LEDGER_ACCOUNT_CURRENCY_INVALID', 'Ledger posting requires IWC accounts', {
@@ -278,13 +314,61 @@ async function lockAndValidateAccounts(tx, normalized) {
       });
     }
   }
+
+  const balances = await tx.$queryRaw(
+    Prisma.sql`
+      SELECT
+        a."id" AS "accountId",
+        COALESCE(sum(CASE
+          WHEN t."status" = 'posted' AND e."side" = 'credit' THEN e."amount"
+          WHEN t."status" = 'posted' AND e."side" = 'debit' THEN -e."amount"
+          ELSE 0
+        END), 0)::DECIMAL(36,8) AS "balance"
+      FROM "ledger_accounts" a
+      LEFT JOIN "ledger_entries" e ON e."accountId" = a."id"
+      LEFT JOIN "ledger_transactions" t ON t."id" = e."transactionId"
+      WHERE a."id" IN (${Prisma.join(accountIds)})
+      GROUP BY a."id"
+    `,
+  );
+  const balanceById = new Map(
+    balances.map((row) => [row.accountId, decimalValueToMinorUnits(row.balance)]),
+  );
+
+  const deltaById = new Map(accountIds.map((accountId) => [accountId, 0n]));
+  for (const entry of normalized.entries) {
+    const sign = entry.side === 'credit' ? 1n : -1n;
+    deltaById.set(entry.accountId, deltaById.get(entry.accountId) + sign * entry.amountMinorUnits);
+  }
+
+  for (const accountId of accountIds) {
+    const account = rowById.get(accountId);
+    if (!NO_OVERDRAFT_ACCOUNT_TYPES.has(account.type)) continue;
+    const before = balanceById.get(accountId) ?? 0n;
+    const after = before + (deltaById.get(accountId) ?? 0n);
+    if (after < 0n) {
+      deny('LEDGER_ACCOUNT_OVERDRAFT', 'Ledger posting would overdraw a protected account', {
+        accountId,
+        accountType: account.type,
+        balanceMinorUnits: before.toString(),
+        deltaMinorUnits: (deltaById.get(accountId) ?? 0n).toString(),
+      });
+    }
+  }
 }
 
 async function postNormalizedWithinTransaction(tx, normalized, expectedHash) {
+  const existingBeforeLock = await loadTransactionByIdempotency(tx, normalized.idempotencyKey);
+  if (existingBeforeLock) return verifyExistingTransaction(existingBeforeLock, expectedHash);
+
+  await acquireLedgerChainLock(tx);
+
   const existing = await loadTransactionByIdempotency(tx, normalized.idempotencyKey);
   if (existing) return verifyExistingTransaction(existing, expectedHash);
 
   await lockAndValidateAccounts(tx, normalized);
+  const chainHead = await loadLedgerChainHead(tx);
+  const previousHash = chainHead?.transactionHash ?? null;
 
   const transaction = await tx.ledgerTransaction.create({
     data: {
@@ -292,6 +376,7 @@ async function postNormalizedWithinTransaction(tx, normalized, expectedHash) {
       referenceType: normalized.referenceType,
       referenceId: normalized.referenceId,
       idempotencyKey: normalized.idempotencyKey,
+      previousHash,
       ...(normalized.metadata === null ? {} : { metadata: normalized.metadata }),
     },
   });
@@ -307,8 +392,6 @@ async function postNormalizedWithinTransaction(tx, normalized, expectedHash) {
     })),
   });
 
-  // previousHash intentionally remains null in M2-02/M2-04. A global hash-chain
-  // head requires serialized concurrent posting and belongs to M2-05.
   await tx.ledgerTransaction.update({
     where: { id: transaction.id },
     data: {
@@ -332,11 +415,6 @@ function isPrismaCode(error, code) {
   return Boolean(error && typeof error === 'object' && error.code === code);
 }
 
-/**
- * Reuse the canonical posting rules inside an existing database transaction.
- * The caller owns transaction isolation, retries, and any additional domain
- * state changes that must commit atomically with the ledger posting.
- */
 export async function postLedgerTransactionInTransaction(tx, input) {
   if (!tx || typeof tx.$queryRaw !== 'function' || !tx.ledgerTransaction) {
     deny('LEDGER_TRANSACTION_CLIENT_INVALID', 'A Prisma transaction client is required');
@@ -346,9 +424,6 @@ export async function postLedgerTransactionInTransaction(tx, input) {
   return postNormalizedWithinTransaction(tx, normalized, expectedHash);
 }
 
-/**
- * Canonical write path for standalone v2 economic events.
- */
 export async function postLedgerTransaction(prisma, input, options = {}) {
   if (!prisma || typeof prisma.$transaction !== 'function') {
     deny('LEDGER_CLIENT_INVALID', 'postLedgerTransaction requires a PrismaClient');
@@ -358,7 +433,7 @@ export async function postLedgerTransaction(prisma, input, options = {}) {
   const expectedHash = hashLedgerPostingEvidence(buildLedgerPostingEvidence(normalized));
   const maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0
     ? options.maxRetries
-    : 3;
+    : 5;
 
   const existing = await loadTransactionByIdempotency(prisma, normalized.idempotencyKey);
   if (existing) return verifyExistingTransaction(existing, expectedHash);
