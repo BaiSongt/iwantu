@@ -9,17 +9,16 @@
     "lint": "eslint",
     "lint:m1": "eslint prisma/backfill-v2-m1-principals.mjs src/lib/agent-auth-core.mjs src/lib/agent-auth-context-core.mjs src/lib/agent-auth-context-types.ts src/lib/auth-agent-v2.ts src/lib/auth-agent-context.ts src/lib/authority/authority.mjs src/lib/authority/authority-snapshot.mjs src/lib/capability-discovery.mjs tests/v2-m1-identity-authority.test.mjs tests/v2-m1-agent-credential.test.mjs tests/v2-m1-mandate.test.mjs tests/v2-m1-agent-auth.test.mjs tests/v2-m1-authority-delegation.test.mjs tests/v2-m1-auth-compatibility.test.mjs tests/v2-m1-authority-snapshot.test.mjs tests/v2-m1-capability-discovery.test.mjs",
     "lint:m2": "eslint src/lib/ledger/ledger-posting.mjs src/lib/ledger/credit-foundation.mjs src/lib/ledger/escrow-primitives.mjs src/lib/ledger/incentive-awards.mjs tests/v2-m2-ledger-accounting.test.mjs tests/v2-m2-ledger-posting.test.mjs tests/v2-m2-credit-foundation.test.mjs tests/v2-m2-escrow-primitives.test.mjs tests/v2-m2-ledger-integrity-concurrency.test.mjs",
-    "lint:m3": "eslint src/lib/task-protocol.mjs src/lib/offer-protocol.mjs tests/v2-m3-task-foundation.test.mjs tests/v2-m3-firm-offer-foundation.test.mjs",
+    "lint:m3": "eslint src/lib/task-protocol.mjs src/lib/offer-protocol.mjs src/lib/task-offer-lifecycle.mjs tests/v2-m3-task-foundation.test.mjs tests/v2-m3-firm-offer-foundation.test.mjs tests/v2-m3-offer-lifecycle-eligibility.test.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:invariants",
-    "test:invariants": "node --test tests/v2-m1-identity-authority.test.mjs && node --test tests/v2-m1-agent-credential.test.mjs && node --test tests/v2-m1-mandate.test.mjs && node --test tests/v2-m1-agent-auth.test.mjs && node --test tests/v2-m1-authority-delegation.test.mjs && node --test tests/v2-m1-auth-compatibility.test.mjs && node --test tests/v2-m1-authority-snapshot.test.mjs && node --test tests/v2-m1-capability-discovery.test.mjs && node --test tests/v2-m2-ledger-accounting.test.mjs && node --test tests/v2-m2-ledger-posting.test.mjs && node --test tests/v2-m2-credit-foundation.test.mjs && node --test tests/v2-m2-escrow-primitives.test.mjs && node --test tests/v2-m2-ledger-integrity-concurrency.test.mjs && node --test tests/v2-m3-task-foundation.test.mjs && node --test tests/v2-m3-firm-offer-foundation.test.mjs",
+    "test:invariants": "node --test tests/v2-m1-identity-authority.test.mjs && node --test tests/v2-m1-agent-credential.test.mjs && node --test tests/v2-m1-mandate.test.mjs && node --test tests/v2-m1-agent-auth.test.mjs && node --test tests/v2-m1-authority-delegation.test.mjs && node --test tests/v2-m1-auth-compatibility.test.mjs && node --test tests/v2-m1-authority-snapshot.test.mjs && node --test tests/v2-m1-capability-discovery.test.mjs && node --test tests/v2-m2-ledger-accounting.test.mjs && node --test tests/v2-m2-ledger-posting.test.mjs && node --test tests/v2-m2-credit-foundation.test.mjs && node --test tests/v2-m2-escrow-primitives.test.mjs && node --test tests/v2-m2-ledger-integrity-concurrency.test.mjs && node --test tests/v2-m3-task-foundation.test.mjs && node --test tests/v2-m3-firm-offer-foundation.test.mjs && node --test tests/v2-m3-offer-lifecycle-eligibility.test.mjs",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "v2:m1:backfill-principals": "node prisma/backfill-v2-m1-principals.mjs",
-    "prisma:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "prisma:studio": "tsx prisma/seed.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
