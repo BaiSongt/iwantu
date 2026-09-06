@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test, { after, before } from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import {
   ensurePrincipalLedgerAccounts,
   ensureSystemLedgerAccounts,
   fundProtocolIncentivePool,
+  issueGenesisCredit,
 } from '../src/lib/ledger/credit-foundation.mjs';
+import { lockEscrow } from '../src/lib/ledger/escrow-primitives.mjs';
 import { awardProtocolIncentive } from '../src/lib/ledger/incentive-awards.mjs';
 import {
   LedgerPostingError,
@@ -181,5 +184,75 @@ test('M2-05: database fork guard rejects two successors for the same previousHas
       },
     }),
     (error) => error && error.code === 'P2002',
+  );
+});
+
+test('M2 closure hardening: Escrow delegates account locking and no-overdraft enforcement to canonical posting', async () => {
+  const source = await readFile(
+    new URL('../src/lib/ledger/escrow-primitives.mjs', import.meta.url),
+    'utf8',
+  );
+
+  assert.doesNotMatch(source, /function lockAccountsForUpdate/);
+  assert.doesNotMatch(source, /function assertSufficientPostedBalance/);
+  assert.match(source, /postLedgerTransactionInTransaction/);
+  assert.match(source, /LEDGER_ACCOUNT_OVERDRAFT/);
+});
+
+test('M2 closure hardening: mixed Escrow and direct postings converge under contention', async () => {
+  const principal = await createPrincipal('mixed-contention');
+  const principalAccounts = await ensurePrincipalLedgerAccounts(prisma, principal.id);
+  const systemAccounts = await ensureSystemLedgerAccounts(prisma);
+  const allocationVersion = unique('mixed-contention-allocation');
+
+  await issueGenesisCredit(prisma, {
+    principalId: principal.id,
+    allocationVersion,
+    amount: '100',
+  });
+
+  const escrowContracts = Array.from({ length: 6 }, (_, index) => unique(`mixed-escrow-${index}`));
+  const directReferences = Array.from({ length: 6 }, (_, index) => unique(`mixed-direct-${index}`));
+  const operations = [];
+
+  for (let index = 0; index < 6; index += 1) {
+    operations.push(
+      lockEscrow(prisma, {
+        contractId: escrowContracts[index],
+        buyerPrincipalId: principal.id,
+        amount: '10',
+      }),
+    );
+    operations.push(
+      postLedgerTransaction(prisma, {
+        type: 'penalty',
+        referenceType: 'm2_mixed_contention',
+        referenceId: directReferences[index],
+        idempotencyKey: `m2-mixed:${directReferences[index]}`,
+        entries: [
+          {
+            accountId: principalAccounts.principal_available.id,
+            side: 'debit',
+            amount: '5',
+          },
+          {
+            accountId: systemAccounts.system_fee.id,
+            side: 'credit',
+            amount: '5',
+          },
+        ],
+      }),
+    );
+  }
+
+  const settled = await Promise.allSettled(operations);
+  const rejected = settled.filter((result) => result.status === 'rejected');
+
+  assert.equal(rejected.length, 0, rejected.map((result) => result.reason?.message).join('\n'));
+  assert.equal(Number(await postedBalance(principalAccounts.principal_available.id)), 10);
+  assert.equal(Number(await postedBalance(principalAccounts.principal_locked.id)), 60);
+  assert.equal(
+    await prisma.escrow.count({ where: { contractId: { in: escrowContracts } } }),
+    6,
   );
 });
