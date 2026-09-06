@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test, { after, before } from 'node:test';
 import { PrismaClient } from '@prisma/client';
@@ -27,6 +28,10 @@ after(async () => {
 
 function unique(label) {
   return `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
 async function createPrincipal(label) {
@@ -156,35 +161,80 @@ test('M2-05: finite incentive pool cannot over-award under concurrent writers', 
   );
 });
 
-test('M2-05: database fork guard rejects two successors for the same previousHash', async () => {
+test('M2-05: fork guard rejects two posted successors while draft work cannot poison the chain head', async () => {
+  const systemAccounts = await ensureSystemLedgerAccounts(prisma);
+  const beneficiary = await createPrincipal('fork-beneficiary');
+  const beneficiaryAccounts = await ensurePrincipalLedgerAccounts(prisma, beneficiary.id);
   const head = await prisma.ledgerTransaction.findFirst({
     where: { status: 'posted', transactionHash: { not: null } },
     orderBy: [{ postedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
   });
   assert.ok(head?.transactionHash);
 
-  await prisma.ledgerTransaction.create({
+  const primaryReference = unique('fork-primary');
+  const primary = await postLedgerTransaction(prisma, {
+    type: 'reserve',
+    referenceType: 'm2_integrity_fork_primary',
+    referenceId: primaryReference,
+    idempotencyKey: `m2-integrity:${primaryReference}`,
+    entries: [
+      {
+        accountId: systemAccounts.system_reserve.id,
+        side: 'debit',
+        amount: '1',
+      },
+      {
+        accountId: beneficiaryAccounts.principal_available.id,
+        side: 'credit',
+        amount: '1',
+      },
+    ],
+  });
+  assert.equal(primary.previousHash, head.transactionHash);
+
+  const competingReference = unique('fork-competing');
+  const competing = await prisma.ledgerTransaction.create({
     data: {
       type: 'reserve',
       referenceType: 'm2_integrity_fork_fixture',
-      referenceId: unique('fork-a'),
-      idempotencyKey: unique('fork-a-key'),
+      referenceId: competingReference,
+      idempotencyKey: `m2-integrity:${competingReference}`,
       previousHash: head.transactionHash,
     },
   });
+  await prisma.ledgerEntry.createMany({
+    data: [
+      {
+        transactionId: competing.id,
+        entryIndex: 0,
+        accountId: systemAccounts.system_reserve.id,
+        side: 'debit',
+        amount: '1',
+      },
+      {
+        transactionId: competing.id,
+        entryIndex: 1,
+        accountId: beneficiaryAccounts.principal_available.id,
+        side: 'credit',
+        amount: '1',
+      },
+    ],
+  });
 
   await assert.rejects(
-    prisma.ledgerTransaction.create({
+    prisma.ledgerTransaction.update({
+      where: { id: competing.id },
       data: {
-        type: 'reserve',
-        referenceType: 'm2_integrity_fork_fixture',
-        referenceId: unique('fork-b'),
-        idempotencyKey: unique('fork-b-key'),
-        previousHash: head.transactionHash,
+        status: 'posted',
+        postedAt: new Date(),
+        transactionHash: sha256(competingReference),
       },
     }),
     (error) => error && error.code === 'P2002',
   );
+
+  const persisted = await prisma.ledgerTransaction.findUnique({ where: { id: competing.id } });
+  assert.equal(persisted?.status, 'draft');
 });
 
 test('M2 closure hardening: Escrow delegates account locking and no-overdraft enforcement to canonical posting', async () => {
