@@ -249,18 +249,18 @@ test('M3-03: TTL is evaluated at acceptance time without mutating Offer status',
   const capabilityId = `urn:test:${unique('ttl')}:capability`;
   const task = await createOpenTask('ttl', [capabilityId]);
   const supplier = await createSupplierFixture('ttl', [capabilityId]);
-  const baseNow = new Date('2026-09-06T06:00:00.000Z');
-  const validUntil = new Date('2026-09-06T06:10:00.000Z');
+  const issueNow = new Date();
+  const validUntil = new Date(issueNow.getTime() + 10 * 60_000);
   const issued = await issueFirmOffer(
     prisma,
     offerInput(task.task.id, supplier, 'ttl', { validUntil }),
-    { now: baseNow },
+    { now: issueNow },
   );
 
   const expired = await evaluateFirmOfferAcceptability(
     prisma,
     acceptabilityInput(issued),
-    { now: new Date('2026-09-06T06:10:00.000Z') },
+    { now: new Date(validUntil.getTime()) },
   );
   assert.equal(expired.ok, false);
   assert.equal(expired.code, 'OFFER_EXPIRED');
