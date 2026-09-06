@@ -149,7 +149,7 @@ Goal:
 ### M3 work sequence
 
 - V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
-- V2-M3-02 — Firm Offer / OfferRevision foundation — **ACTIVE**
+- V2-M3-02 — Firm Offer / OfferRevision foundation — **COMPLETE** (PR #18)
 - V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **NEXT**
 - V2-M3-04 — signed economic command binding / authority snapshot integration — **PLANNED**
 - V2-M3-05 — M3 protocol integrity gate — **PLANNED**
