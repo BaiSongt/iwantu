@@ -82,7 +82,7 @@ test('M2-05: protected Principal accounts cannot be overdrawn by the canonical p
     },
   );
 
-  assert.equal(await postedBalance(principalAccounts.principal_available.id), '0');
+  assert.equal(Number(await postedBalance(principalAccounts.principal_available.id)), 0);
 });
 
 test('M2-05: finite incentive pool cannot over-award under concurrent writers', async () => {
@@ -92,6 +92,31 @@ test('M2-05: finite incentive pool cannot over-award under concurrent writers', 
     createPrincipal('award-b'),
     createPrincipal('award-c'),
   ]);
+  const systemAccounts = await ensureSystemLedgerAccounts(prisma);
+  const startingBalance = await postedBalance(systemAccounts.system_incentive.id);
+
+  if (Number(startingBalance) > 0) {
+    const drainRef = unique('incentive-drain');
+    await postLedgerTransaction(prisma, {
+      type: 'reserve',
+      referenceType: 'm2_integrity_test_reset',
+      referenceId: drainRef,
+      idempotencyKey: `m2-integrity:${drainRef}`,
+      entries: [
+        {
+          accountId: systemAccounts.system_incentive.id,
+          side: 'debit',
+          amount: startingBalance,
+        },
+        {
+          accountId: systemAccounts.system_reserve.id,
+          side: 'credit',
+          amount: startingBalance,
+        },
+      ],
+    });
+  }
+  assert.equal(Number(await postedBalance(systemAccounts.system_incentive.id)), 0);
 
   const funded = await fundProtocolIncentivePool(prisma, {
     budgetRef: unique('budget'),
@@ -114,9 +139,7 @@ test('M2-05: finite incentive pool cannot over-award under concurrent writers', 
   assert.equal(rejected.length, 1);
   assert.ok(rejected[0].reason instanceof LedgerPostingError);
   assert.equal(rejected[0].reason.code, 'LEDGER_ACCOUNT_OVERDRAFT');
-
-  const systemAccounts = await ensureSystemLedgerAccounts(prisma);
-  assert.equal(await postedBalance(systemAccounts.system_incentive.id), '2');
+  assert.equal(Number(await postedBalance(systemAccounts.system_incentive.id)), 2);
 
   const successful = [funded, ...fulfilled];
   const hashes = new Set(successful.map((transaction) => transaction.transactionHash));
@@ -137,7 +160,7 @@ test('M2-05: database fork guard rejects two successors for the same previousHas
   });
   assert.ok(head?.transactionHash);
 
-  const first = await prisma.ledgerTransaction.create({
+  await prisma.ledgerTransaction.create({
     data: {
       type: 'reserve',
       referenceType: 'm2_integrity_fork_fixture',
@@ -159,6 +182,4 @@ test('M2-05: database fork guard rejects two successors for the same previousHas
     }),
     (error) => error && error.code === 'P2002',
   );
-
-  await prisma.ledgerTransaction.delete({ where: { id: first.id } });
 });
