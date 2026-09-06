@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-05
+Updated: 2026-09-06
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -25,7 +25,7 @@ Implemented foundation:
 
 M1 intentionally does not cut over legacy Demand/Proposal/MCP production economic writes.
 
-## M2 — Economic Ledger Foundation — ACTIVE
+## M2 — Economic Ledger Foundation — COMPLETE
 
 Goal:
 
@@ -53,14 +53,17 @@ Core invariants:
 - Normal transaction settlement never mints IWC (`Transaction != Mint`).
 - First-stage currency is closed-loop `IWC` only.
 - Escrow state changes must be backed by immutable ledger transactions.
+- Protected Principal and finite system accounts cannot become negative through the canonical posting path.
+- Every non-root posted ledger transaction has at most one successor through `previousHash`.
+- Protocol Incentive awards spend only from the finite Incentive pool.
 
 ### M2 work sequence
 
 - V2-M2-01 — Ledger schema & accounting invariants — **COMPLETE** (`75986d9e`)
 - V2-M2-02 — Atomic posting engine — **COMPLETE** (`fb489b51`)
 - V2-M2-03 — Credit provenance & account bootstrap — **COMPLETE** (`4ec1c565`)
-- V2-M2-04 — Escrow primitives — **ACTIVE**
-- V2-M2-05 — Ledger integrity / concurrency gate — NOT STARTED
+- V2-M2-04 — Escrow primitives — **COMPLETE** (`4ba45a2d`)
+- V2-M2-05 — Ledger integrity / concurrency gate — **COMPLETE** (PR #15)
 
 ### V2-M2-02 boundary
 
@@ -78,7 +81,7 @@ normalize + validate
 → commit
 ```
 
-M2-02 deliberately does not claim a global transaction hash chain. `previousHash` remains unset by the posting engine until M2-05 introduces a serialized chain-head/concurrency invariant. This avoids creating a hash chain that can fork under concurrent writes.
+M2-02 deliberately did not claim a global transaction hash chain. M2-05 now supplies the serialized chain-head/concurrency invariant without changing the canonical economic evidence hash introduced by M2-02.
 
 ### V2-M2-03 boundary
 
@@ -91,7 +94,7 @@ M2-03 establishes:
 - Purchased Credit idempotency keyed by the external purchase reference;
 - a finite Protocol Incentive system pool funded from Reserve.
 
-M2-03 does not add a P2P transfer API and does not allow an Agent to own a LedgerAccount. Genesis and Purchased Credit are the controlled issuance paths implemented in this phase. Protocol Incentive awards to a Principal remain deferred until M2-05 can enforce an atomic no-overdraft invariant against the finite Incentive pool under concurrent writers.
+M2-03 does not add a P2P transfer API and does not allow an Agent to own a LedgerAccount. Genesis and Purchased Credit remain controlled issuance paths. Protocol Incentive awards introduced by M2-05 spend atomically from the finite Incentive pool and credit a Principal-owned Available account with structured provenance.
 
 ### V2-M2-04 boundary
 
@@ -112,10 +115,22 @@ The ledger transaction and Escrow state change commit inside the same Serializab
 
 Database invariants independently verify the exact lock/release/refund transaction type, reference, account direction and amount before accepting an Escrow lifecycle change. `contractId` remains an opaque protocol reference until the protocol-native Contract model exists; M2-04 does not introduce Contract early.
 
-The narrow no-overdraft check in M2-04 protects Escrow locking only. M2-05 still owns the general ledger balance integrity rule, Incentive-pool spending, global transaction hash-chain head and broader high-contention concurrency tests.
+### V2-M2-05 boundary
 
-## M3 — Task / Offer Protocol — NOT STARTED
+M2-05 closes the economic foundation with a general integrity and contention gate:
 
-Task / TaskRevision / TaskCapabilityRequirement / Offer / OfferRevision remain M3 work and must not be pulled into M2 merely to exercise the ledger.
+- the canonical posting path takes exclusive locks on all participating accounts and rejects any posting that would make a protected Principal or finite system account negative;
+- `system_reserve` remains the controlled issuance source and is deliberately not treated as a finite spend account;
+- a transaction-scoped PostgreSQL advisory lock serializes global ledger-head assignment;
+- every posted transaction records the current posted head in `previousHash` and a partial unique index prevents two successors from sharing one non-null predecessor hash;
+- standalone Serializable posting retries serialization and uniqueness races before failing closed;
+- Protocol Incentive awards debit only the finite `system_incentive` pool and preserve Credit provenance;
+- contention tests prove concurrent awards cannot over-spend the pool and database constraints reject ledger-chain forks.
+
+M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
+
+## M3 — Task / Offer Protocol — NEXT
+
+Task / TaskRevision / TaskCapabilityRequirement / Offer / OfferRevision are the next protocol-native implementation milestone. M3 should consume the completed M1 identity/authority foundation and M2 economic foundation without reintroducing authority or balance state into Agent, Task, or Offer records.
 
 Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.
