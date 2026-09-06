@@ -237,16 +237,23 @@ test('M2-05: fork guard rejects two posted successors while draft work cannot po
   assert.equal(persisted?.status, 'draft');
 });
 
-test('M2 closure hardening: Escrow delegates account locking and no-overdraft enforcement to canonical posting', async () => {
-  const source = await readFile(
-    new URL('../src/lib/ledger/escrow-primitives.mjs', import.meta.url),
-    'utf8',
-  );
+test('M2 closure hardening: canonical ledger and Escrow use one explicit concurrency-control model', async () => {
+  const [escrowSource, postingSource] = await Promise.all([
+    readFile(new URL('../src/lib/ledger/escrow-primitives.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/ledger/ledger-posting.mjs', import.meta.url), 'utf8'),
+  ]);
 
-  assert.doesNotMatch(source, /function lockAccountsForUpdate/);
-  assert.doesNotMatch(source, /function assertSufficientPostedBalance/);
-  assert.match(source, /postLedgerTransactionInTransaction/);
-  assert.match(source, /LEDGER_ACCOUNT_OVERDRAFT/);
+  assert.doesNotMatch(escrowSource, /function lockAccountsForUpdate/);
+  assert.doesNotMatch(escrowSource, /function assertSufficientPostedBalance/);
+  assert.match(escrowSource, /postLedgerTransactionInTransaction/);
+  assert.match(escrowSource, /LEDGER_ACCOUNT_OVERDRAFT/);
+
+  assert.match(postingSource, /pg_advisory_xact_lock/);
+  assert.match(postingSource, /FOR UPDATE/);
+  assert.match(postingSource, /TransactionIsolationLevel\.ReadCommitted/);
+  assert.doesNotMatch(postingSource, /TransactionIsolationLevel\.Serializable/);
+  assert.match(escrowSource, /TransactionIsolationLevel\.ReadCommitted/);
+  assert.doesNotMatch(escrowSource, /TransactionIsolationLevel\.Serializable/);
 });
 
 test('M2 closure hardening: mixed Escrow and direct postings converge under contention', async () => {
