@@ -1,6 +1,6 @@
 # V2-M3-04 — Signed Economic Command Binding / Authority Integration
 
-Status: ACTIVE
+Status: COMPLETE (PR #20 implementation gate / CI #66)
 
 ## Goal
 
@@ -93,6 +93,21 @@ Task → Offer
 The Task row is locked before computing the Offer hash. Therefore a Task revision racing a pre-signed Offer cannot silently bind the old signature to new Task state: the server recomputes the current Offer hash and signature verification fails closed.
 
 Offer revisions lock the Offer row before allocating the next revision number.
+
+## Verified gate
+
+PR #20 CI #66 passed on the real PostgreSQL workflow with:
+
+- all existing 17 migrations deployed cleanly;
+- full M1/M2/M3 invariant regression suite;
+- real Ed25519 key generation / public JWK verification tests;
+- signed Offer tamper / replay / revocation / stale-Task / economic-limit tests;
+- M1, M2 and M3 changed-code lint;
+- TypeScript typecheck;
+- production Next.js build;
+- legacy full-repository lint baseline.
+
+No new migration or mutable economic authority field was required for this slice.
 
 ## Scope boundary
 
