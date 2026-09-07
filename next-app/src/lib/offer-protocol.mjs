@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
-const FIRM_OFFER_PROTOCOL_VERSION = 'iwantu-firm-offer/0.1';
+const FIRM_OFFER_PROTOCOL_VERSION = 'iwantu-firm-offer/0.2';
 const MAX_INTEGER_DIGITS = 28;
 const MAX_FRACTION_DIGITS = 8;
 
@@ -23,6 +23,11 @@ function nonEmpty(value, field) {
     deny('OFFER_INPUT_INVALID', `${field} must be a non-empty string`, { field });
   }
   return value.trim();
+}
+
+function optionalNonEmpty(value, field) {
+  if (value === undefined || value === null) return null;
+  return nonEmpty(value, field);
 }
 
 function normalizeJsonValue(value, field) {
@@ -112,6 +117,13 @@ function normalizeValidUntil(value, now = new Date()) {
   return validUntil;
 }
 
+/**
+ * Normalize Firm Offer terms independently from authorization evidence.
+ *
+ * M3-04 deliberately allows AuthoritySnapshot/signature fields to be absent
+ * while the client/server computes the exact Offer hash to sign. Persistence
+ * still requires those fields and is checked in createOfferRevision().
+ */
 export function normalizeFirmOfferTerms(input, now = new Date()) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     deny('OFFER_INPUT_INVALID', 'Firm Offer terms must be an object');
@@ -127,13 +139,13 @@ export function normalizeFirmOfferTerms(input, now = new Date()) {
     validUntil: normalizeValidUntil(input.validUntil, now),
     termsPayload: normalizeJsonObject(input.termsPayload, 'termsPayload'),
     nonce: nonEmpty(input.nonce, 'nonce'),
-    supplierAuthoritySnapshotId: nonEmpty(
+    supplierAuthoritySnapshotId: optionalNonEmpty(
       input.supplierAuthoritySnapshotId,
       'supplierAuthoritySnapshotId',
     ),
-    signatureAlgorithm: nonEmpty(input.signatureAlgorithm, 'signatureAlgorithm'),
-    signatureKeyId: nonEmpty(input.signatureKeyId, 'signatureKeyId'),
-    supplierSignature: nonEmpty(input.supplierSignature, 'supplierSignature'),
+    signatureAlgorithm: optionalNonEmpty(input.signatureAlgorithm, 'signatureAlgorithm'),
+    signatureKeyId: optionalNonEmpty(input.signatureKeyId, 'signatureKeyId'),
+    supplierSignature: optionalNonEmpty(input.supplierSignature, 'supplierSignature'),
   };
 }
 
@@ -141,6 +153,13 @@ export function hashOfferTerms(termsPayload) {
   return createHash('sha256').update(canonicalOfferJson(termsPayload), 'utf8').digest('hex');
 }
 
+/**
+ * Economic commitment evidence intentionally excludes AuthoritySnapshot id and
+ * signature bytes. The Offer must be hashable before its signature can be
+ * verified and before the server creates the historical authority snapshot.
+ * Snapshot id/signature are immutable evidence attached to the stored revision,
+ * not economic terms that define the Offer hash.
+ */
 export function buildFirmOfferEvidence(input) {
   return {
     protocolVersion: FIRM_OFFER_PROTOCOL_VERSION,
@@ -156,7 +175,6 @@ export function buildFirmOfferEvidence(input) {
     termsHash: input.termsHash,
     supplierPrincipalId: input.supplierPrincipalId,
     supplierAgentIdentityId: input.supplierAgentIdentityId,
-    supplierAuthoritySnapshotId: input.supplierAuthoritySnapshotId,
     nonce: input.nonce,
   };
 }
@@ -216,6 +234,9 @@ async function requireActiveSupplier(tx, principalId, agentIdentityId) {
 }
 
 async function requireSupplierAuthoritySnapshot(tx, snapshotId, principalId, agentIdentityId) {
+  if (!snapshotId) {
+    deny('OFFER_AUTHORITY_SNAPSHOT_REQUIRED', 'Firm Offer persistence requires AuthoritySnapshot evidence');
+  }
   const snapshot = await tx.authoritySnapshot.findUnique({
     where: { id: snapshotId },
     select: { id: true, principalId: true, agentIdentityId: true },
@@ -233,6 +254,12 @@ async function requireSupplierAuthoritySnapshot(tx, snapshotId, principalId, age
     );
   }
   return snapshot;
+}
+
+function requireStoredSignature(normalized) {
+  if (!normalized.signatureAlgorithm || !normalized.signatureKeyId || !normalized.supplierSignature) {
+    deny('OFFER_SIGNATURE_EVIDENCE_REQUIRED', 'Firm Offer persistence requires signature evidence');
+  }
 }
 
 async function lockOpenTaskAndCurrentRevision(tx, taskId) {
@@ -289,6 +316,7 @@ async function lockOffer(tx, offerId) {
 }
 
 async function createOfferRevision(tx, offer, taskRevision, revisionNumber, normalized) {
+  requireStoredSignature(normalized);
   await requireSupplierAuthoritySnapshot(
     tx,
     normalized.supplierAuthoritySnapshotId,
@@ -396,9 +424,6 @@ export async function reviseFirmOffer(prisma, input, options = {}) {
 
   try {
     return await prisma.$transaction(async (tx) => {
-      // Global M3 lock order is Task -> Offer. Read the immutable Offer taskId first,
-      // then take the Task shared lock before the Offer update lock. Task lifecycle
-      // transitions take Task FOR UPDATE and then Offer locks, so both paths agree.
       const envelope = await readOfferEnvelope(tx, offerId);
       if (!envelope) deny('OFFER_NOT_FOUND', 'Offer does not exist', { offerId });
       const { revision: taskRevision } = await lockOpenTaskAndCurrentRevision(tx, envelope.taskId);

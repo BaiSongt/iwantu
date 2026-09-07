@@ -34,6 +34,22 @@ export function sha256Evidence(value) {
   return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
 }
 
+function normalizeStringArray(value, field) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+    deny('snapshot_request_invalid', `${field} must be an array of non-empty strings`);
+  }
+  return [...new Set(value)].sort();
+}
+
+function optionalString(value, field) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length === 0) {
+    deny('snapshot_request_invalid', `${field} must be a non-empty string when supplied`);
+  }
+  return value;
+}
+
 function normalizeRequestEvidence(request) {
   if (!request || typeof request !== 'object') {
     deny('snapshot_request_invalid', 'AuthoritySnapshot requires request evidence');
@@ -45,19 +61,26 @@ function normalizeRequestEvidence(request) {
   return {
     action: request.action,
     capabilityId: request.capabilityId ?? null,
+    capabilityIds: normalizeStringArray(request.capabilityIds, 'capabilityIds'),
     economic: request.economic ?? null,
-    resourceRefs: request.resourceRefs ?? [],
-    dataRefs: request.dataRefs ?? [],
+    resourceRefs: normalizeStringArray(request.resourceRefs, 'resourceRefs'),
+    dataRefs: normalizeStringArray(request.dataRefs, 'dataRefs'),
     rawDataAccess: request.rawDataAccess ?? false,
     counterpartyPrincipalId: request.counterpartyPrincipalId ?? null,
+    commandHash: optionalString(request.commandHash, 'commandHash'),
+    payloadHash: optionalString(request.payloadHash, 'payloadHash'),
+    nonce: optionalString(request.nonce, 'nonce'),
+    signingCredentialId: optionalString(request.signingCredentialId, 'signingCredentialId'),
+    signingKeyId: optionalString(request.signingKeyId, 'signingKeyId'),
+    signatureAlgorithm: optionalString(request.signatureAlgorithm, 'signatureAlgorithm'),
   };
 }
 
 /**
- * Build immutable historical evidence from the M1-06 authenticated authority
- * context. This function does not resolve authority and cannot authorize a new
- * command. The caller must already have passed live authentication + Mandate
- * resolution for the same Agent/Principal.
+ * Build immutable historical evidence from the authenticated authority context.
+ * This function does not resolve authority and cannot authorize a new command.
+ * The caller must already have passed live authentication + Mandate resolution
+ * for the same Agent/Principal and, for economic commands, signature checks.
  */
 export function buildAuthoritySnapshot(boundContext, request, resolvedAt = new Date()) {
   if (boundContext?.kind !== 'authenticated_authority_context') {
