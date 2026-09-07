@@ -92,7 +92,35 @@ async function createSupplier(label) {
       algorithm: 'EdDSA',
     },
   });
-  return { ...supplier, apiCredential, signingCredential, privateKey };
+  const mandate = await prisma.mandate.create({
+    data: {
+      mandateFamilyId: `m3-integrity-family-${supplier.suffix}`,
+      version: 1,
+      issuerPrincipalId: supplier.principal.id,
+      subjectAgentIdentityId: supplier.agent.id,
+      actionScopes: ['offer.issue', 'offer.revise'],
+      capabilityScopes: ['*'],
+      economicLimits: { singleContract: 1000, currency: 'IWC' },
+      resourcePolicy: {},
+      dataPolicy: { rawDataAccess: false },
+      counterpartyPolicy: {},
+      validFrom: new Date(Date.now() - 60_000),
+      validUntil: new Date(Date.now() + 86_400_000),
+      delegationAllowed: false,
+      maxDelegationDepth: 0,
+      payloadHash: sha256(`m3-integrity-mandate:${supplier.suffix}`),
+      signatureAlgorithm: 'EdDSA',
+      signatureKeyId: `principal-key-${supplier.suffix}`,
+      signature: `principal-signature-${supplier.suffix}`,
+    },
+  });
+  return {
+    ...supplier,
+    apiCredential,
+    signingCredential,
+    privateKey,
+    mandate,
+  };
 }
 
 function baseOfferInput(taskId, supplier, label) {
@@ -122,7 +150,6 @@ async function createSnapshotForOffer({ supplier, task, offerInput, payloadHash,
     supplier.privateKey,
   ).toString('base64url');
   const resolvedAt = new Date();
-  const mandatePayloadHash = sha256(`mandate:${supplier.suffix}`);
   const requestEvidence = {
     action,
     capabilityId: null,
@@ -143,9 +170,14 @@ async function createSnapshotForOffer({ supplier, task, offerInput, payloadHash,
     signatureAlgorithm: 'EdDSA',
   };
   const mandateChain = [{
-    id: `mandate-${supplier.suffix}`,
-    version: 1,
-    payloadHash: mandatePayloadHash,
+    id: supplier.mandate.id,
+    mandateFamilyId: supplier.mandate.mandateFamilyId,
+    version: supplier.mandate.version,
+    issuerPrincipalId: supplier.mandate.issuerPrincipalId,
+    subjectAgentIdentityId: supplier.mandate.subjectAgentIdentityId,
+    parentMandateId: supplier.mandate.parentMandateId,
+    delegationDepth: supplier.mandate.delegationDepth,
+    payloadHash: supplier.mandate.payloadHash,
   }];
   const evidence = {
     protocolVersion: 'iwantu-authority-snapshot/0.1',
@@ -153,7 +185,7 @@ async function createSnapshotForOffer({ supplier, task, offerInput, payloadHash,
     agentIdentityId: supplier.agent.id,
     credentialId: supplier.apiCredential.id,
     credentialKeyId: supplier.apiCredential.keyId,
-    leafMandateId: mandateChain[0].id,
+    leafMandateId: supplier.mandate.id,
     mandateChain,
     authorityChainHash: sha256Evidence(mandateChain),
     effectiveAuthority: {
