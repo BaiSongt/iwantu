@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-06
+Updated: 2026-09-07
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -151,8 +151,8 @@ Goal:
 - V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
 - V2-M3-02 — Firm Offer / OfferRevision foundation — **COMPLETE** (PR #18)
 - V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **COMPLETE** (PR #19)
-- V2-M3-04 — signed economic command binding / authority snapshot integration — **NEXT**
-- V2-M3-05 — M3 protocol integrity gate — **PLANNED**
+- V2-M3-04 — signed economic command binding / authority snapshot integration — **COMPLETE** (PR #20 implementation gate / CI #66)
+- V2-M3-05 — M3 protocol integrity gate — **NEXT**
 
 ### V2-M3-01 boundary
 
@@ -182,27 +182,30 @@ M3-01 does not yet introduce Offer, Contract, Escrow reservation during acceptan
 
 M3-02 introduces protocol-native `Offer` and immutable `OfferRevision` alongside legacy `Proposal`. A2A conversation and indicative quotes remain non-binding; the Offer aggregate is reserved for Firm Offer commitment evidence.
 
-Each Offer chain is unique per `(taskId, supplierPrincipalId)` in the MVP. A revision binds:
+Each Offer chain is unique per `(taskId, supplierPrincipalId)` in the MVP. The original M3-02 storage foundation attached Task snapshot, supplier authority evidence, nonce and signature fields to each immutable revision. M3-04 later refines the signable economic payload into `iwantu-firm-offer/0.2` so the exact Offer hash is computable before server-side authority evidence is generated.
+
+The v0.2 Offer hash now binds:
 
 ```text
 task id
-+ exact sealed TaskRevision id / revision / taskHash
++ exact sealed TaskRevision revision / taskHash
 + offer revision
 + IWC price
 + optional delivery commitment
 + finite validUntil
 + canonical terms payload / termsHash
 + supplier Principal / Agent
-+ supplier AuthoritySnapshot reference
 + nonce
 → offerHash
 ```
+
+`OfferRevision.supplierAuthoritySnapshotId` and signature fields remain immutable attached evidence, but they are deliberately excluded from the signable Offer hash to avoid a circular dependency on a server-generated snapshot id.
 
 `OfferRevision` rows are append-only. Supplier term changes create a new revision while preserving older evidence. Revision allocation locks the stable Offer row so concurrent revisions form a contiguous chain rather than duplicate revision numbers.
 
 Database triggers independently require the referenced TaskRevision to belong to the Offer Task and match `taskHash`, and require the AuthoritySnapshot to belong to the same supplier Principal/Agent. The snapshot is historical evidence only; it is not reused as live authority for a future command.
 
-M3-02 stores signature algorithm/key/signature material as commitment evidence, but does **not** yet claim cryptographic signature verification or live Mandate authorization at the command boundary. Those controls remain M3-04. Similarly, Withdraw/Accept/Not Selected lifecycle semantics and stale-offer acceptance rules are completed in M3-03.
+M3-02 originally stored signature algorithm/key/signature material as commitment evidence without claiming cryptographic verification. M3-04 closes that gap for signed Firm Offer issue/revision through the live economic-command path.
 
 No Contract, Escrow reservation during acceptance, production route cutover, or legacy Proposal shadow write is introduced in M3-02.
 
@@ -231,6 +234,36 @@ Capability eligibility requires at least one non-retired AgentVersion of the Sup
 
 All M3 Task/Offer state mutations now share a `Task -> Offer(s)` row-lock order. This prevents cancellation/closure from introducing lock inversion against concurrent Offer revision or withdrawal.
 
-M3-03 does not form a Contract, reserve Escrow, move Ledger value, verify the buyer acceptance signature, reuse AuthoritySnapshot as live authority, or cut over legacy Demand/Proposal production routes. Those controls remain M3-04 and later slices.
+M3-03 does not form a Contract, reserve Escrow, move Ledger value, verify the buyer acceptance signature, reuse AuthoritySnapshot as live authority, or cut over legacy Demand/Proposal production routes.
+
+### V2-M3-04 boundary
+
+M3-04 closes the gap between stored Firm Offer signature fields and an actually authenticated, signed and currently authorized Agent commitment.
+
+The canonical signed Firm Offer issue/revision path is:
+
+```text
+v2 API AgentCredential authentication
+→ exact Firm Offer v0.2 hash
+→ EdDSA signature verification with a separate SIGNING AgentCredential
+→ live Principal / Agent / credential kill-switch checks
+→ named live Mandate / Delegation resolution
+→ Buyer counterparty policy
+→ all current Task capability scopes
+→ exact fixed-point singleContract IWC limit
+→ authenticated authority binding
+→ fresh AuthoritySnapshot command evidence
+→ immutable Offer / OfferRevision write
+```
+
+Access and economic signing credentials remain separate. A normal API credential cannot substitute for a SIGNING credential, iWANTU stores only public signing verification material, and caller-supplied historical AuthoritySnapshot ids are rejected by the canonical signed path.
+
+The economic command envelope (`iwantu-economic-command/0.1`) binds action, authenticated Principal/Agent, presented Mandate, exact Offer payload hash, nonce, short issuedAt/expiresAt window, signing key id and algorithm. OfferRevision nonce remains the immutable replay guard.
+
+All live authorization checks, fresh AuthoritySnapshot creation and the Offer write occur in one database transaction. Task state is locked before the Offer hash is computed, preserving the M3 `Task -> Offer` order and ensuring a Task revision racing an already-signed Offer fails signature verification rather than silently rebinding the commitment.
+
+PR #20 implementation CI #66 passed the full migration/invariant/lint/typecheck/build gate with real Ed25519 key/JWK verification. M3-04 does not introduce Contract, Buyer ACCEPT_OFFER, Escrow reservation, Supplier Stake, Reputation/Integrity execution, or production route cutover.
+
+M3-05 remains responsible for the final Task/Offer protocol integrity closure before Contract Formation begins.
 
 Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.
