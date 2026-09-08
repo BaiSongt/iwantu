@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-07
+Updated: 2026-09-08
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -140,7 +140,7 @@ M2-05 closes the economic foundation with a general integrity and contention gat
 
 M2 intentionally stops here. It does not introduce Task, Offer, Contract, Delivery, Acceptance, Settlement, Reputation, or production economic write-path cutover merely to exercise the ledger.
 
-## M3 — Task / Offer Protocol — ACTIVE
+## M3 — Task / Offer Protocol — COMPLETE
 
 Goal:
 
@@ -151,8 +151,10 @@ Goal:
 - V2-M3-01 — Task / TaskRevision / TaskCapabilityRequirement foundation — **COMPLETE** (PR #17)
 - V2-M3-02 — Firm Offer / OfferRevision foundation — **COMPLETE** (PR #18)
 - V2-M3-03 — Task/Offer lifecycle, stale-offer and eligibility invariants — **COMPLETE** (PR #19)
-- V2-M3-04 — signed economic command binding / authority snapshot integration — **COMPLETE** (PR #20 implementation gate / CI #66)
-- V2-M3-05 — M3 protocol integrity gate — **NEXT**
+- V2-M3-04 — signed economic command binding / authority snapshot integration — **COMPLETE** (PR #20)
+- V2-M3-05 — stored Firm Offer protocol integrity gate — **COMPLETE** (PR #21)
+- V2-M3-06 — signed Offer withdrawal / immutable receipt — **COMPLETE** (PR #22)
+- V2-M3-07 — M3 closure gate / unsigned withdrawal bypass removal — **COMPLETE ON MERGE** (PR #23)
 
 ### V2-M3-01 boundary
 
@@ -213,7 +215,7 @@ No Contract, Escrow reservation during acceptance, production route cutover, or 
 
 M3-03 turns Task/Offer snapshots into a deterministic pre-formation state and eligibility layer.
 
-Lifecycle writes now enforce:
+Lifecycle writes enforce:
 
 ```text
 Task:  draft -> open
@@ -232,7 +234,7 @@ Firm Offer staleness is derived rather than stored: the exact OfferRevision Task
 
 Capability eligibility requires at least one non-retired AgentVersion of the Supplier AgentIdentity to satisfy the complete current Task capability requirement set. Claims are matched by exact capability id; both `declared` and `verified` claims establish capability presence in M3-03, while stronger trust/reputation semantics remain separate.
 
-All M3 Task/Offer state mutations now share a `Task -> Offer(s)` row-lock order. This prevents cancellation/closure from introducing lock inversion against concurrent Offer revision or withdrawal.
+All M3 Task/Offer state mutations share a `Task -> Offer(s)` row-lock order. This prevents cancellation/closure from introducing lock inversion against concurrent Offer revision or withdrawal.
 
 M3-03 does not form a Contract, reserve Escrow, move Ledger value, verify the buyer acceptance signature, reuse AuthoritySnapshot as live authority, or cut over legacy Demand/Proposal production routes.
 
@@ -262,8 +264,45 @@ The economic command envelope (`iwantu-economic-command/0.1`) binds action, auth
 
 All live authorization checks, fresh AuthoritySnapshot creation and the Offer write occur in one database transaction. Task state is locked before the Offer hash is computed, preserving the M3 `Task -> Offer` order and ensuring a Task revision racing an already-signed Offer fails signature verification rather than silently rebinding the commitment.
 
-PR #20 implementation CI #66 passed the full migration/invariant/lint/typecheck/build gate with real Ed25519 key/JWK verification. M3-04 does not introduce Contract, Buyer ACCEPT_OFFER, Escrow reservation, Supplier Stake, Reputation/Integrity execution, or production route cutover.
+M3-04 does not introduce Contract, Buyer ACCEPT_OFFER, Escrow reservation, Supplier Stake, Reputation/Integrity execution, or production route cutover.
 
-M3-05 remains responsible for the final Task/Offer protocol integrity closure before Contract Formation begins.
+### V2-M3-05 boundary
 
-Contract, Delivery, Acceptance, Settlement and Reputation remain later protocol work.
+M3-05 adds consumption-side historical integrity verification for an exact stored Firm Offer. `verifyStoredFirmOfferIntegrity()` recomputes the sealed Task binding, terms hash, `iwantu-firm-offer/0.2` offer hash, exact AuthoritySnapshot request binding and evidence hash, then verifies the historical EdDSA signature from persisted public signing material.
+
+Historical integrity verification deliberately remains distinct from live authorization. Later credential or Mandate revocation can block new/formable commitments without erasing the ability to prove that an earlier signed commitment was validly recorded.
+
+### V2-M3-06 boundary
+
+M3-06 makes Supplier withdrawal a signed economic command rather than a plain lifecycle mutation. `withdrawSignedFirmOffer()` requires live v2 authentication, a live EdDSA signing credential, signature verification, live `offer.withdraw` Mandate resolution, a fresh AuthoritySnapshot, exact current Offer revision/hash binding, and an append-only immutable withdrawal receipt.
+
+The receipt preserves the withdrawal payload hash, economic command hash, Supplier identity, AuthoritySnapshot, nonce, signing material, signature, timestamp and deterministic receipt hash. Exact retries return the existing receipt rather than creating another withdrawal transition.
+
+### V2-M3-07 closure boundary
+
+M3-07 removes the legacy unsigned `withdrawFirmOffer()` compatibility mutation and moves the closure guarantee into PostgreSQL as well as the application surface.
+
+Before a withdrawal receipt may be inserted, the database verifies its exact current Offer revision/hash, Supplier identity and `offer.withdraw` AuthoritySnapshot command evidence. Before any Offer may transition into `withdrawn`, the database requires that exact immutable receipt to already exist. The canonical signed withdrawal transaction intentionally writes the validated receipt first and then changes the Offer status.
+
+This means neither an application helper nor a direct Prisma status update can bypass the authenticated signed withdrawal protocol.
+
+M3 stops here. It does not introduce Contract, Escrow reservation at acceptance, Delivery, Acceptance, Settlement, Reputation, or legacy Demand/Proposal production cutover merely to complete the pre-Contract protocol boundary.
+
+## M4 — Contract Formation — NEXT
+
+M4 should begin from the existing `offer-contract-formation-v0.1.md` protocol baseline rather than extending M3 further.
+
+The first M4 slice should establish the immutable Contract formation aggregate and atomic formation boundary for one exact current TaskRevision plus one exact verified Firm Offer. Contract Formation must consume, not weaken, the existing M1 authority, M2 ledger/escrow and M3 integrity gates.
+
+The initial formation path should fail closed unless it can bind:
+
+- current OPEN Task + exact sealed TaskRevision/hash;
+- current ACTIVE, unexpired, non-stale Firm Offer + exact OfferRevision/hash;
+- stored Firm Offer historical integrity verification;
+- authenticated requester Principal/Agent and live acceptance authority;
+- canonical signed acceptance command evidence;
+- atomic reservation of the required buyer economic capacity through the M2 ledger/escrow foundation;
+- one immutable Contract id and formation evidence;
+- atomic Task/Offer terminal transitions reserved by M3 for Contract Formation.
+
+Delivery, execution acceptance, settlement and reputation remain later milestones.
