@@ -13,7 +13,6 @@ import {
   cancelTask,
   closeTask,
   evaluateFirmOfferAcceptability,
-  withdrawFirmOffer,
 } from '../src/lib/task-offer-lifecycle.mjs';
 import { createTask, openTask, reviseTask } from '../src/lib/task-protocol.mjs';
 
@@ -184,6 +183,7 @@ test('M3-03: staleness is derived and no mutable isStale protocol field is intro
   assert.doesNotMatch(revisionModel, /isStale|staleAt/);
   assert.match(source, /TASK_REVISION_MISMATCH/);
   assert.match(source, /offerRevision\.taskRevisionId !== currentTaskRevision\.id/);
+  assert.doesNotMatch(source, /export async function withdrawFirmOffer/);
 });
 
 test('M3-03: exact current Firm Offer is acceptable when one live AgentVersion satisfies all Task capabilities', async () => {
@@ -268,32 +268,25 @@ test('M3-03: TTL is evaluated at acceptance time without mutating Offer status',
   assert.equal(persisted?.status, 'active');
 });
 
-test('M3-03: Supplier withdrawal is terminal, idempotent and makes the Offer ineligible', async () => {
-  const capabilityId = `urn:test:${unique('withdraw')}:capability`;
-  const task = await createOpenTask('withdraw', [capabilityId]);
-  const supplier = await createSupplierFixture('withdraw', [capabilityId]);
-  const issued = await issueFirmOffer(prisma, offerInput(task.task.id, supplier, 'withdraw'));
-
-  const withdrawn = await withdrawFirmOffer(prisma, { offerId: issued.offer.id });
-  assert.equal(withdrawn.status, 'withdrawn');
-  const again = await withdrawFirmOffer(prisma, { offerId: issued.offer.id });
-  assert.equal(again.status, 'withdrawn');
-
-  const result = await evaluateFirmOfferAcceptability(prisma, acceptabilityInput(issued));
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'OFFER_WITHDRAWN');
+test('M3-07: unsigned direct Offer withdrawal is rejected and leaves the Firm Offer eligible', async () => {
+  const capabilityId = `urn:test:${unique('withdraw-gate')}:capability`;
+  const task = await createOpenTask('withdraw-gate', [capabilityId]);
+  const supplier = await createSupplierFixture('withdraw-gate', [capabilityId]);
+  const issued = await issueFirmOffer(prisma, offerInput(task.task.id, supplier, 'withdraw-gate'));
 
   await assert.rejects(
-    reviseFirmOffer(prisma, {
-      ...offerInput(task.task.id, supplier, 'withdraw-revise'),
-      offerId: issued.offer.id,
+    prisma.offer.update({
+      where: { id: issued.offer.id },
+      data: { status: 'withdrawn' },
     }),
-    (error) => {
-      assert.ok(error instanceof OfferProtocolError);
-      assert.equal(error.code, 'OFFER_NOT_REVISIONABLE');
-      return true;
-    },
   );
+
+  const persisted = await prisma.offer.findUnique({ where: { id: issued.offer.id } });
+  assert.equal(persisted?.status, 'active');
+
+  const result = await evaluateFirmOfferAcceptability(prisma, acceptabilityInput(issued));
+  assert.equal(result.ok, true);
+  assert.equal(result.code, 'OFFER_ACCEPTABLE');
 });
 
 test('M3-03: cancelling Task atomically closes active Offers and terminal Task cannot reopen', async () => {
@@ -440,29 +433,29 @@ test('M3-03: Task cancellation racing Offer revision follows Task -> Offer lock 
   );
 });
 
-test('M3-03: Supplier withdrawal racing Offer revision serializes on the Offer after a shared Task lock', async () => {
-  const capabilityId = `urn:test:${unique('race-withdraw')}:capability`;
-  const task = await createOpenTask('race-withdraw', [capabilityId]);
-  const supplier = await createSupplierFixture('race-withdraw', [capabilityId]);
-  const issued = await issueFirmOffer(prisma, offerInput(task.task.id, supplier, 'race-withdraw-v1'));
+test('M3-07: direct withdrawal racing Offer revision cannot bypass the signed command boundary', async () => {
+  const capabilityId = `urn:test:${unique('race-withdraw-gate')}:capability`;
+  const task = await createOpenTask('race-withdraw-gate', [capabilityId]);
+  const supplier = await createSupplierFixture('race-withdraw-gate', [capabilityId]);
+  const issued = await issueFirmOffer(prisma, offerInput(task.task.id, supplier, 'race-withdraw-gate-v1'));
 
-  const results = await Promise.allSettled([
-    withdrawFirmOffer(prisma, { offerId: issued.offer.id }),
+  const [withdrawalResult, revisionResult] = await Promise.allSettled([
+    prisma.offer.update({
+      where: { id: issued.offer.id },
+      data: { status: 'withdrawn' },
+    }),
     reviseFirmOffer(prisma, {
-      ...offerInput(task.task.id, supplier, 'race-withdraw-v2'),
+      ...offerInput(task.task.id, supplier, 'race-withdraw-gate-v2'),
       offerId: issued.offer.id,
       priceAmount: '31',
     }),
   ]);
 
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      assert.ok(result.reason instanceof OfferProtocolError);
-      assert.equal(result.reason.code, 'OFFER_NOT_REVISIONABLE');
-    }
-  }
+  assert.equal(withdrawalResult.status, 'rejected');
+  assert.equal(revisionResult.status, 'fulfilled');
+
   const finalOffer = await prisma.offer.findUnique({ where: { id: issued.offer.id } });
-  assert.equal(finalOffer?.status, 'withdrawn');
+  assert.equal(finalOffer?.status, 'active');
   const revisions = await prisma.offerRevision.findMany({
     where: { offerId: issued.offer.id },
     orderBy: { revision: 'asc' },
