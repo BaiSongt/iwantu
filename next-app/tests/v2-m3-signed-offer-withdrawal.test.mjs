@@ -301,3 +301,43 @@ test('M3-06: withdrawal refuses stale revision/hash binding', async () => {
     },
   );
 });
+
+test('M3-07: forged withdrawal receipt cannot unlock a direct Offer status transition', async () => {
+  const supplier = await createSupplier('forged-receipt');
+  const { issued } = await createActiveOffer('forged-receipt', supplier);
+  const nonce = unique('forged-receipt-nonce');
+  const withdrawalHash = sha256(unique('forged-withdrawal'));
+  const commandHash = sha256(unique('forged-command'));
+  const receiptHash = sha256(unique('forged-receipt-hash'));
+  const receiptId = unique('forged-receipt-id');
+
+  await assert.rejects(
+    prisma.$executeRaw`
+      INSERT INTO "offer_withdrawal_receipts" (
+        "id", "offerId", "offerRevision", "offerHash", "withdrawalHash", "commandHash",
+        "supplierPrincipalId", "supplierAgentIdentityId", "authoritySnapshotId", "nonce",
+        "signatureAlgorithm", "signingKeyId", "supplierSignature", "receiptHash", "withdrawnAt"
+      ) VALUES (
+        ${receiptId}, ${issued.offer.id}, ${issued.revision.revision}, ${issued.revision.offerHash},
+        ${withdrawalHash}, ${commandHash}, ${supplier.principal.id}, ${supplier.agent.id},
+        ${supplier.issueSnapshot.id}, ${nonce}, 'EdDSA', ${supplier.signingKeyId},
+        'forged-withdrawal-signature', ${receiptHash}, ${new Date()}
+      )
+    `,
+  );
+
+  const receipts = await prisma.$queryRaw`
+    SELECT "id" FROM "offer_withdrawal_receipts" WHERE "offerId" = ${issued.offer.id}
+  `;
+  assert.equal(receipts.length, 0);
+
+  await assert.rejects(
+    prisma.offer.update({
+      where: { id: issued.offer.id },
+      data: { status: 'withdrawn' },
+    }),
+  );
+
+  const offer = await prisma.offer.findUnique({ where: { id: issued.offer.id } });
+  assert.equal(offer.status, 'active');
+});

@@ -1,6 +1,6 @@
 # V2-M3-06 Signed Offer Withdrawal / Receipt
 
-Status: IMPLEMENTED ON FEATURE BRANCH
+Status: COMPLETE — merged in PR #22
 
 ## Goal
 
@@ -47,8 +47,10 @@ Database triggers reject receipt UPDATE and DELETE operations. Unique constraint
 
 An exact retry of the already-recorded withdrawal returns the existing receipt rather than creating another state transition.
 
-## M3 boundary note
+## M3 closure note
 
-M3-06 establishes the secure canonical withdrawal path and its evidence gate. The older `withdrawFirmOffer()` lifecycle helper is retained temporarily for M3-03 compatibility tests and is not the canonical production command path. M3 should not be marked COMPLETE until that unsigned compatibility path is removed or made unreachable from production surfaces.
+M3-06 established the secure canonical withdrawal path and immutable evidence, but deliberately left the older `withdrawFirmOffer()` lifecycle helper temporarily available for M3-03 compatibility tests.
 
-No Contract, Delivery, Settlement or Reputation object is introduced by this slice.
+M3-07 closes that final gap by removing the unsigned mutation and adding database guards that require the exact signed withdrawal receipt before any Offer can enter `withdrawn`. After M3-07 passes CI and merges, Supplier withdrawal has no remaining unsigned application or direct-Prisma state bypass.
+
+No Contract, Delivery, Settlement or Reputation object is introduced by M3-06.

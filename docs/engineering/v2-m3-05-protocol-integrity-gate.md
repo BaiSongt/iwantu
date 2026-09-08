@@ -1,6 +1,6 @@
 # V2-M3-05 — Task / Firm Offer Protocol Integrity Gate
 
-Status: ACTIVE
+Status: COMPLETE — merged in PR #21
 
 ## Goal
 
@@ -55,10 +55,10 @@ The M3-05 gate adds tests proving:
 2. an AuthoritySnapshot from the same Supplier cannot be substituted when its payload binding is for a different Offer;
 3. later signing-credential revocation does not destroy historical signature verifiability.
 
-The new verifier and tests are included in `lint:m3` and the full `test:invariants` sequence.
+The verifier and tests are included in `lint:m3` and the full `test:invariants` sequence.
 
-## Remaining M3 closure
+## Subsequent closure work
 
-Before M3 can be marked COMPLETE, the remaining pre-Contract boundary is the canonical signed withdrawal/receipt path identified by M3-04. External production write-path cutover remains out of scope until that commitment-removal operation is authenticated and auditable.
+M3-06 added the canonical signed withdrawal/receipt path. M3-07 removes the remaining unsigned compatibility mutation and makes the signed receipt a database prerequisite for entering `withdrawn`.
 
-M3-05 does not introduce Contract, Buyer acceptance, Escrow reservation, Supplier Stake, Delivery, Settlement, Reputation, or production legacy-route cutover.
+M3-05 itself does not introduce Contract, Buyer acceptance, Escrow reservation, Supplier Stake, Delivery, Settlement, Reputation, or production legacy-route cutover.

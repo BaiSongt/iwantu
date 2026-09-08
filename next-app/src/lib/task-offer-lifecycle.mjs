@@ -53,18 +53,6 @@ async function lockTask(tx, taskId, mode = 'update') {
   return rows[0] ?? null;
 }
 
-async function lockOffer(tx, offerId) {
-  const rows = await tx.$queryRaw(
-    Prisma.sql`
-      SELECT "id", "taskId", "supplierPrincipalId", "supplierAgentIdentityId", "status", "currentRevision"
-      FROM "offers"
-      WHERE "id" = ${offerId}
-      FOR UPDATE
-    `,
-  );
-  return rows[0] ?? null;
-}
-
 async function lockOffersForTask(tx, taskId) {
   return tx.$queryRaw(
     Prisma.sql`
@@ -137,40 +125,6 @@ export async function closeTask(prisma, input, options = {}) {
     return tx.task.update({
       where: { id: taskId },
       data: { status: 'closed', closedAt: now },
-    });
-  });
-}
-
-export async function withdrawFirmOffer(prisma, input) {
-  if (!prisma || typeof prisma.$transaction !== 'function') {
-    deny('PROTOCOL_CLIENT_INVALID', 'withdrawFirmOffer requires a PrismaClient');
-  }
-  const offerId = nonEmpty(input?.offerId, 'offerId');
-
-  return prisma.$transaction(async (tx) => {
-    // Read immutable taskId first, then follow the global M3 lock order Task -> Offer.
-    const envelope = await tx.offer.findUnique({
-      where: { id: offerId },
-      select: { id: true, taskId: true },
-    });
-    if (!envelope) deny('OFFER_NOT_FOUND', 'Offer does not exist', { offerId });
-
-    await lockTask(tx, envelope.taskId, 'share');
-    const offer = await lockOffer(tx, offerId);
-    if (!offer) deny('OFFER_NOT_FOUND', 'Offer does not exist', { offerId });
-    if (offer.status === 'withdrawn') {
-      return tx.offer.findUnique({ where: { id: offerId } });
-    }
-    if (offer.status !== 'active') {
-      deny('OFFER_NOT_WITHDRAWABLE', 'Only an active Firm Offer can be withdrawn', {
-        offerId,
-        status: offer.status,
-      });
-    }
-
-    return tx.offer.update({
-      where: { id: offerId },
-      data: { status: 'withdrawn' },
     });
   });
 }
