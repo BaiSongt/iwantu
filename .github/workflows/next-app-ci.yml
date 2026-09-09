@@ -72,6 +72,9 @@ jobs:
       - name: M3 changed-code lint
         run: npm run lint:m3
 
+      - name: M4 changed-code lint
+        run: npm run lint:m4
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -79,7 +82,7 @@ jobs:
         run: npm run build
 
       # master currently carries legacy ESLint failures from React/Next rule changes.
-      # Keep them visible without making unrelated UI cleanup a prerequisite for M1/M2/M3.
+      # Keep them visible without making unrelated UI cleanup a prerequisite for M1/M2/M3/M4.
       - name: Legacy full-repository lint baseline
         continue-on-error: true
         run: npm run lint
