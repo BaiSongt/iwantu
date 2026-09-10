@@ -63,6 +63,15 @@ jobs:
       - name: Invariant tests
         run: npm test
 
+      - name: M4 signed acceptance happy path
+        run: node --test --test-name-pattern="signed Buyer acceptance forms" tests/v2-m4-signed-offer-acceptance.test.mjs
+
+      - name: M4 signed acceptance fail-closed signature
+        run: node --test --test-name-pattern="tampered Buyer signature" tests/v2-m4-signed-offer-acceptance.test.mjs
+
+      - name: M4 unsigned formation bypass guard
+        run: node --test --test-name-pattern="database gate rejects unsigned" tests/v2-m4-signed-offer-acceptance.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
