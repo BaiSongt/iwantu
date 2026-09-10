@@ -9,7 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { createAgentApiCredentialMaterial } from '../src/lib/agent-auth-core.mjs';
 import { createV2AgentAuthenticationContext } from '../src/lib/agent-auth-context-core.mjs';
 import { formAuthorizedContract } from '../src/lib/contract-formation.mjs';
-import { awardProtocolIncentive } from '../src/lib/ledger/incentive-awards.mjs';
+import { issueGenesisCredit } from '../src/lib/ledger/credit-foundation.mjs';
 import { buildFirmOfferHash } from '../src/lib/offer-protocol.mjs';
 import {
   buildEconomicCommandEvidence,
@@ -169,10 +169,9 @@ async function createMarketFixture(label) {
     { now },
   );
 
-  await awardProtocolIncentive(prisma, {
+  await issueGenesisCredit(prisma, {
     principalId: buyer.principal.id,
-    programId: unique('acceptance-test-program'),
-    awardId: unique('acceptance-test-award'),
+    allocationVersion: unique('acceptance-test-allocation'),
     amount: '100.00000000',
   });
 
