@@ -72,6 +72,15 @@ jobs:
       - name: M4 unsigned formation bypass guard
         run: node --test --test-name-pattern="database gate rejects unsigned" tests/v2-m4-signed-offer-acceptance.test.mjs
 
+      - name: M5 signed Delivery happy path
+        run: node --test --test-name-pattern="signed Supplier Delivery is immutable" tests/v2-m5-signed-delivery.test.mjs
+
+      - name: M5 signed Delivery fail-closed signature
+        run: node --test --test-name-pattern="tampered Supplier Delivery signature" tests/v2-m5-signed-delivery.test.mjs
+
+      - name: M5 Delivery state bypass guard
+        run: node --test --test-name-pattern="database rejects direct ACCEPTANCE_PENDING" tests/v2-m5-signed-delivery.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -84,6 +93,9 @@ jobs:
       - name: M4 changed-code lint
         run: npm run lint:m4
 
+      - name: M5 changed-code lint
+        run: npm run lint:m5
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -91,7 +103,7 @@ jobs:
         run: npm run build
 
       # master currently carries legacy ESLint failures from React/Next rule changes.
-      # Keep them visible without making unrelated UI cleanup a prerequisite for M1/M2/M3/M4.
+      # Keep them visible without making unrelated UI cleanup a prerequisite for M1-M5.
       - name: Legacy full-repository lint baseline
         continue-on-error: true
         run: npm run lint
