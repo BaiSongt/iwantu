@@ -171,10 +171,23 @@ FOR EACH ROW EXECUTE FUNCTION "iwantu_prevent_settlement_mutation"();
 CREATE OR REPLACE FUNCTION "iwantu_require_settlement_for_escrow_release"()
 RETURNS trigger AS $$
 DECLARE
+  protocol_contract_bound BOOLEAN;
   valid_settlement BOOLEAN;
 BEGIN
   IF OLD."status" = 'locked'::"EscrowStatus"
      AND NEW."status" = 'released'::"EscrowStatus" THEN
+    SELECT EXISTS(
+      SELECT 1 FROM "contracts" c
+      WHERE c."id" = NEW."contractId" AND c."escrowId" = NEW."id"
+    ) INTO protocol_contract_bound;
+
+    -- M2 Escrow primitives intentionally remain usable for non-Contract ledger tests
+    -- and compatibility callers. The M5 gate applies only after a v2 Contract binds
+    -- the Escrow as protocol authority.
+    IF NOT protocol_contract_bound THEN
+      RETURN NEW;
+    END IF;
+
     SELECT EXISTS(
       SELECT 1 FROM "settlements" s
       WHERE s."contractId" = NEW."contractId"
