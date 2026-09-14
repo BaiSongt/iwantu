@@ -81,6 +81,9 @@ jobs:
       - name: M5 Delivery state bypass guard
         run: node --test --test-name-pattern="database rejects direct ACCEPTANCE_PENDING" tests/v2-m5-signed-delivery.test.mjs
 
+      - name: M5 deterministic AUTO_ACCEPT policy
+        run: node --test tests/v2-m5-auto-accept.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
