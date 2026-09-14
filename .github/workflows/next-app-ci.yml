@@ -84,6 +84,9 @@ jobs:
       - name: M5 deterministic AUTO_ACCEPT policy
         run: node --test tests/v2-m5-auto-accept.test.mjs
 
+      - name: M5 atomic terminal Settlement
+        run: node --test tests/v2-m5-atomic-settlement.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
