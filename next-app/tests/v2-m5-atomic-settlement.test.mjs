@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   buildSettlementEvidence,
@@ -78,4 +79,23 @@ test('M5-03B: settlement entry point fails closed before touching persistence on
     (error) => error?.code === 'SETTLEMENT_INPUT_INVALID',
   );
   assert.equal(persistenceTouched, false);
+});
+
+test('M5-03C: terminal settlement keeps Ledger posting inside the Serializable coordinator', async () => {
+  const source = await readFile(new URL('../src/lib/atomic-settlement.mjs', import.meta.url), 'utf8');
+  assert.match(source, /postLedgerTransactionInTransaction/);
+  assert.match(source, /Prisma\.TransactionIsolationLevel\.Serializable/);
+  assert.doesNotMatch(source, /\breleaseEscrow\s*\(/);
+  assert.doesNotMatch(source, /\brefundEscrow\s*\(/);
+});
+
+test('M5-03C: terminal Settlement remains exactly-one and immutable at the persistence boundary', async () => {
+  const migration = await readFile(
+    new URL('../prisma/migrations/20260914172000_v2_m5_atomic_settlement/migration.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /UNIQUE\s*\(\s*"contractId"\s*\)/i);
+  assert.match(migration, /SETTLEMENT.*IMMUTABLE|IMMUTABLE.*SETTLEMENT/i);
+  assert.match(migration, /ESCROW.*SETTLEMENT|SETTLEMENT.*ESCROW/i);
+  assert.match(migration, /CONTRACT.*CLOSED|CLOSED.*CONTRACT/i);
 });
