@@ -9,21 +9,12 @@ import {
 
 function settlementInput(overrides = {}) {
   return {
-    contractId: 'contract-1',
-    effectiveContractHash: 'contract-hash-1',
-    deliveryId: 'delivery-1',
-    deliveryHash: 'delivery-hash-1',
-    acceptanceDecisionId: 'acceptance-1',
-    acceptanceDecisionHash: 'acceptance-hash-1',
-    acceptanceSource: 'buyer_signed',
-    supplierPrincipalId: 'supplier-principal-1',
-    supplierAgentIdentityId: 'supplier-agent-1',
-    escrowId: 'escrow-1',
-    amount: '25.50000000',
-    currency: 'IWC',
-    ledgerTransactionId: 'ledger-1',
-    ledgerTransactionHash: 'ledger-hash-1',
-    ...overrides,
+    contractId: 'contract-1', effectiveContractHash: 'contract-hash-1', deliveryId: 'delivery-1',
+    deliveryHash: 'delivery-hash-1', acceptanceDecisionId: 'acceptance-1',
+    acceptanceDecisionHash: 'acceptance-hash-1', acceptanceSource: 'buyer_signed',
+    supplierPrincipalId: 'supplier-principal-1', supplierAgentIdentityId: 'supplier-agent-1',
+    escrowId: 'escrow-1', amount: '25.50000000', currency: 'IWC', ledgerTransactionId: 'ledger-1',
+    ledgerTransactionHash: 'ledger-hash-1', ...overrides,
   };
 }
 
@@ -44,17 +35,12 @@ test('M5-03B: Settlement evidence binds Contract, latest Delivery, acceptance, E
 test('M5-03B: Settlement hash changes for every terminal economic binding', () => {
   const baseline = hashSettlementEvidence(buildSettlementEvidence(settlementInput()));
   const changes = [
-    { effectiveContractHash: 'contract-hash-2' },
-    { deliveryHash: 'delivery-hash-2' },
-    { acceptanceDecisionHash: 'acceptance-hash-2' },
-    { acceptanceSource: 'auto_accept' },
-    { escrowId: 'escrow-2' },
-    { amount: '25.40000000' },
-    { ledgerTransactionHash: 'ledger-hash-2' },
+    { effectiveContractHash: 'contract-hash-2' }, { deliveryHash: 'delivery-hash-2' },
+    { acceptanceDecisionHash: 'acceptance-hash-2' }, { acceptanceSource: 'auto_accept' },
+    { escrowId: 'escrow-2' }, { amount: '25.40000000' }, { ledgerTransactionHash: 'ledger-hash-2' },
   ];
   for (const change of changes) {
-    const changed = hashSettlementEvidence(buildSettlementEvidence(settlementInput(change)));
-    assert.notEqual(baseline, changed);
+    assert.notEqual(baseline, hashSettlementEvidence(buildSettlementEvidence(settlementInput(change))));
   }
 });
 
@@ -68,12 +54,7 @@ test('M5-03B: AUTO_ACCEPT and Buyer-signed ACCEPT share one terminal Settlement 
 
 test('M5-03B: settlement entry point fails closed before touching persistence on malformed input', async () => {
   let persistenceTouched = false;
-  const fakePrisma = {
-    $queryRaw: async () => {
-      persistenceTouched = true;
-      return [];
-    },
-  };
+  const fakePrisma = { $queryRaw: async () => { persistenceTouched = true; return []; } };
   await assert.rejects(
     () => settleAcceptedDelivery(fakePrisma, { contractId: 'contract-1', idempotencyKey: '' }),
     (error) => error?.code === 'SETTLEMENT_INPUT_INVALID',
@@ -89,13 +70,13 @@ test('M5-03C: terminal settlement keeps Ledger posting inside the Serializable c
   assert.doesNotMatch(source, /\brefundEscrow\s*\(/);
 });
 
-test('M5-03C: terminal Settlement remains exactly-one and immutable at the persistence boundary', async () => {
+test('M5-03C: terminal Settlement persistence keeps exactly-one, immutability and state bypass guards', async () => {
   const migration = await readFile(
-    new URL('../prisma/migrations/20260914172000_v2_m5_atomic_settlement/migration.sql', import.meta.url),
+    new URL('../prisma/migrations/20260914173000_v2_m5_atomic_settlement_foundation/migration.sql', import.meta.url),
     'utf8',
   );
-  assert.match(migration, /UNIQUE\s*\(\s*"contractId"\s*\)/i);
-  assert.match(migration, /SETTLEMENT.*IMMUTABLE|IMMUTABLE.*SETTLEMENT/i);
-  assert.match(migration, /ESCROW.*SETTLEMENT|SETTLEMENT.*ESCROW/i);
-  assert.match(migration, /CONTRACT.*CLOSED|CLOSED.*CONTRACT/i);
+  assert.match(migration, /CREATE UNIQUE INDEX "settlements_contract_key"/);
+  assert.match(migration, /SETTLEMENT_IS_IMMUTABLE/);
+  assert.match(migration, /iwantu_require_settlement_for_escrow_release/);
+  assert.match(migration, /iwantu_require_settlement_for_contract_close/);
 });
