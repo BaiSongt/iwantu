@@ -25,6 +25,12 @@ import {
   hashDeliveryEvidence,
   submitSignedDelivery,
 } from '../src/lib/signed-delivery.mjs';
+import {
+  buildDeliveryAcceptanceEvidence,
+  decideSignedDelivery,
+  hashDeliveryAcceptanceEvidence,
+} from '../src/lib/signed-delivery-acceptance.mjs';
+import { settleAcceptedDelivery } from '../src/lib/atomic-settlement.mjs';
 import { createTask, openTask } from '../src/lib/task-protocol.mjs';
 
 const prisma = new PrismaClient();
@@ -108,7 +114,7 @@ async function createActor(label, orgType, actionScopes) {
 }
 
 async function createActiveContract(label) {
-  const buyer = await createActor(`buyer-${label}`, 'buyer', ['offer.accept']);
+  const buyer = await createActor(`buyer-${label}`, 'buyer', ['offer.accept', 'delivery.accept']);
   const supplier = await createActor(`supplier-${label}`, 'supplier', ['offer.issue', 'delivery.submit']);
   const created = await createTask(prisma, {
     issuerPrincipalId: buyer.principal.id,
@@ -289,6 +295,46 @@ function signDelivery(fixture, now = new Date(), overrides = {}) {
   };
 }
 
+
+function signDeliveryAcceptance(fixture, delivery, now = new Date()) {
+  const base = {
+    decisionIdempotencyKey: unique('delivery-accept'),
+    contractId: fixture.formed.contract.id,
+    effectiveContractHash: fixture.formed.contract.effectiveContractHash,
+    deliveryId: delivery.id,
+    deliveryHash: delivery.deliveryHash,
+    decision: 'accept',
+    buyerPrincipalId: fixture.buyer.principal.id,
+    buyerAgentIdentityId: fixture.buyer.agent.id,
+    nonce: unique('delivery-accept-nonce'),
+  };
+  const decisionHash = hashDeliveryAcceptanceEvidence(buildDeliveryAcceptanceEvidence(base));
+  const commandIssuedAt = new Date(now.getTime() - 1000);
+  const commandExpiresAt = new Date(now.getTime() + 5 * 60_000);
+  const command = buildEconomicCommandEvidence({
+    action: 'delivery.accept',
+    principalId: fixture.buyer.principal.id,
+    agentIdentityId: fixture.buyer.agent.id,
+    mandateId: fixture.buyer.mandate.id,
+    payloadHash: decisionHash,
+    nonce: base.nonce,
+    issuedAt: commandIssuedAt,
+    expiresAt: commandExpiresAt,
+    signingKeyId: fixture.buyer.signingKeyId,
+    signatureAlgorithm: 'EdDSA',
+  });
+  const commandHash = hashEconomicCommandEvidence(command);
+  return {
+    ...base,
+    mandateId: fixture.buyer.mandate.id,
+    commandIssuedAt,
+    commandExpiresAt,
+    signatureAlgorithm: 'EdDSA',
+    signatureKeyId: fixture.buyer.signingKeyId,
+    buyerSignature: signDigest(null, Buffer.from(commandHash, 'hex'), fixture.buyer.privateKey).toString('base64url'),
+  };
+}
+
 test('M5-01: signed Supplier Delivery is immutable, advances Contract and keeps Escrow locked', async () => {
   const fixture = await createActiveContract('signed-delivery');
   const now = new Date();
@@ -359,4 +405,68 @@ test('M5-01: database rejects direct ACCEPTANCE_PENDING transition without a pro
   const contractRows = await prisma.$queryRaw`SELECT "lifecycleState" FROM "contracts" WHERE "id" = ${fixture.formed.contract.id}`;
   assert.equal(contractRows[0].lifecycleState, 'active');
   assert.equal((await prisma.escrow.findUnique({ where: { id: fixture.formed.escrow.id } })).status, 'locked');
+});
+
+test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Supplier authority suspension', async () => {
+  const fixture = await createActiveContract('settlement-e2e');
+  const now = new Date();
+  const signedDelivery = signDelivery(fixture, now);
+  const delivered = await submitSignedDelivery(prisma, fixture.supplier.authentication, signedDelivery.input, { now });
+  const acceptanceInput = signDeliveryAcceptance(fixture, delivered.delivery, now);
+  const accepted = await decideSignedDelivery(prisma, fixture.buyer.authentication, acceptanceInput, { now });
+
+  assert.equal(accepted.acceptanceDecision.decision, 'accept');
+  assert.equal(accepted.contract.lifecycleState, 'acceptance_pending');
+  assert.equal(accepted.escrow.status, 'locked');
+
+  await prisma.agentIdentity.update({
+    where: { id: fixture.supplier.agent.id },
+    data: { status: 'suspended' },
+  });
+  await prisma.mandate.update({
+    where: { id: fixture.supplier.mandate.id },
+    data: { status: 'revoked', revokedAt: new Date(now.getTime() + 1000) },
+  });
+
+  const supplierAccountsBefore = await prisma.ledgerAccount.findMany({
+    where: { principalId: fixture.supplier.principal.id, currency: 'IWC' },
+  });
+  const supplierAvailableBefore = supplierAccountsBefore.find((account) => account.type === 'principal_available');
+  const beforeBalance = Number(supplierAvailableBefore?.balance ?? 0);
+
+  const idempotencyKey = unique('settlement-e2e');
+  const settled = await settleAcceptedDelivery(prisma, {
+    contractId: fixture.formed.contract.id,
+    idempotencyKey,
+  });
+  assert.equal(settled.replayed, false);
+  assert.equal(settled.settlement.contractId, fixture.formed.contract.id);
+  assert.equal(settled.settlement.deliveryId, delivered.delivery.id);
+  assert.equal(settled.settlement.acceptanceDecisionId, accepted.acceptanceDecision.id);
+
+  const [contractRows, escrow, supplierAvailableAfter, ledgerRows] = await Promise.all([
+    prisma.$queryRaw`SELECT * FROM "contracts" WHERE "id" = ${fixture.formed.contract.id}`,
+    prisma.escrow.findUnique({ where: { id: fixture.formed.escrow.id } }),
+    prisma.ledgerAccount.findFirst({
+      where: { principalId: fixture.supplier.principal.id, type: 'principal_available', currency: 'IWC' },
+    }),
+    prisma.$queryRaw`SELECT * FROM "ledger_transactions" WHERE "id" = ${settled.settlement.ledgerTransactionId}`,
+  ]);
+  assert.equal(contractRows[0].lifecycleState, 'closed');
+  assert.equal(escrow.status, 'released');
+  assert.equal(escrow.releaseLedgerTransactionId, settled.settlement.ledgerTransactionId);
+  assert.equal(ledgerRows.length, 1);
+  assert.equal(Number(supplierAvailableAfter.balance) - beforeBalance, Number(escrow.amount));
+
+  const replay = await settleAcceptedDelivery(prisma, {
+    contractId: fixture.formed.contract.id,
+    idempotencyKey,
+  });
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.settlement.id, settled.settlement.id);
+
+  const settlements = await prisma.$queryRaw`SELECT "id" FROM "settlements" WHERE "contractId" = ${fixture.formed.contract.id}`;
+  const releasePostings = await prisma.$queryRaw`SELECT "id" FROM "ledger_transactions" WHERE "referenceType" = 'escrow_release' AND "referenceId" = ${fixture.formed.contract.id}`;
+  assert.equal(settlements.length, 1);
+  assert.equal(releasePostings.length, 1);
 });
