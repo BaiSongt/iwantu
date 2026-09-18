@@ -39,9 +39,7 @@ test('M5-03B: Settlement hash changes for every terminal economic binding', () =
     { acceptanceDecisionHash: 'acceptance-hash-2' }, { acceptanceSource: 'auto_accept' },
     { escrowId: 'escrow-2' }, { amount: '25.40000000' }, { ledgerTransactionHash: 'ledger-hash-2' },
   ];
-  for (const change of changes) {
-    assert.notEqual(baseline, hashSettlementEvidence(buildSettlementEvidence(settlementInput(change))));
-  }
+  for (const change of changes) assert.notEqual(baseline, hashSettlementEvidence(buildSettlementEvidence(settlementInput(change))));
 });
 
 test('M5-03B: AUTO_ACCEPT and Buyer-signed ACCEPT share one terminal Settlement evidence shape', () => {
@@ -55,10 +53,7 @@ test('M5-03B: AUTO_ACCEPT and Buyer-signed ACCEPT share one terminal Settlement 
 test('M5-03B: settlement entry point fails closed before touching persistence on malformed input', async () => {
   let persistenceTouched = false;
   const fakePrisma = { $queryRaw: async () => { persistenceTouched = true; return []; } };
-  await assert.rejects(
-    () => settleAcceptedDelivery(fakePrisma, { contractId: 'contract-1', idempotencyKey: '' }),
-    (error) => error?.code === 'SETTLEMENT_INPUT_INVALID',
-  );
+  await assert.rejects(() => settleAcceptedDelivery(fakePrisma, { contractId: 'contract-1', idempotencyKey: '' }), (error) => error?.code === 'SETTLEMENT_INPUT_INVALID');
   assert.equal(persistenceTouched, false);
 });
 
@@ -71,12 +66,17 @@ test('M5-03C: terminal settlement keeps Ledger posting inside the Serializable c
 });
 
 test('M5-03C: terminal Settlement persistence keeps exactly-one, immutability and state bypass guards', async () => {
-  const migration = await readFile(
-    new URL('../prisma/migrations/20260914173000_v2_m5_atomic_settlement_foundation/migration.sql', import.meta.url),
-    'utf8',
-  );
+  const migration = await readFile(new URL('../prisma/migrations/20260914173000_v2_m5_atomic_settlement_foundation/migration.sql', import.meta.url), 'utf8');
   assert.match(migration, /CREATE UNIQUE INDEX "settlements_contract_key"/);
   assert.match(migration, /SETTLEMENT_IS_IMMUTABLE/);
   assert.match(migration, /iwantu_require_settlement_for_escrow_release/);
   assert.match(migration, /iwantu_require_settlement_for_contract_close/);
+});
+
+test('M5-03C: formed obligations survive later Supplier authority suspension or revocation', async () => {
+  const source = await readFile(new URL('../src/lib/atomic-settlement.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /requireActiveSupplier/);
+  assert.doesNotMatch(source, /SETTLEMENT_SUPPLIER_INACTIVE/);
+  assert.match(source, /beneficiaryPrincipalId: contract\.supplierPrincipalId/);
+  assert.match(source, /ensurePrincipalLedgerAccounts\(prisma, supplierPrincipalId\)/);
 });
