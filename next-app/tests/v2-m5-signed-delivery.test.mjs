@@ -423,9 +423,18 @@ test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Sup
     where: { id: fixture.supplier.agent.id },
     data: { status: 'suspended' },
   });
-  await prisma.mandate.update({
-    where: { id: fixture.supplier.mandate.id },
-    data: { status: 'revoked', revokedAt: new Date(now.getTime() + 1000) },
+  await prisma.mandateRevocation.create({
+    data: {
+      mandateId: fixture.supplier.mandate.id,
+      revokedByPrincipalId: fixture.supplier.principal.id,
+      reasonCode: 'post-acceptance-revocation',
+      reason: 'Authority revoked after the contractual obligation was already accepted.',
+      payloadHash: sha256(unique('settlement-mandate-revocation')),
+      signatureAlgorithm: 'EdDSA',
+      signatureKeyId: `principal-key-${unique('settlement-revocation')}`,
+      signature: unique('settlement-revocation-signature'),
+      revokedAt: new Date(now.getTime() + 1000),
+    },
   });
 
   const supplierAccountsBefore = await prisma.ledgerAccount.findMany({
