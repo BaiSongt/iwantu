@@ -90,6 +90,9 @@ jobs:
       - name: M6 Supplier Default atomic full refund
         run: node --test tests/v2-m6-supplier-default-refund.test.mjs
 
+      - name: M7 REJECT to REWORK second Delivery
+        run: node --test tests/v2-m7-rework-second-delivery.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -107,6 +110,9 @@ jobs:
 
       - name: M6 changed-code lint
         run: npm run lint:m6
+
+      - name: M7 changed-code lint
+        run: npm run lint:m7
 
       - name: Typecheck
         run: npm run typecheck
