@@ -327,6 +327,10 @@ async function authorizeParty(
   return { command, commandHash, signingCredential, snapshot };
 }
 
+function isUniqueConflict(error) {
+  return Boolean(error && typeof error === 'object' && error.code === 'P2002');
+}
+
 function isSerializationFailure(error) {
   if (error && typeof error === 'object' && error.code === 'P2034') return true;
   const diagnostic = `${error?.message ?? ''} ${JSON.stringify(error?.meta ?? {})}`;
@@ -672,11 +676,19 @@ export async function settleMutualSplit(
       );
     } catch (error) {
       if (error instanceof MutualSettlementError) throw error;
-      if (isSerializationFailure(error) && attempt < maxRetries) continue;
+      if ((isSerializationFailure(error) || isUniqueConflict(error)) && attempt < maxRetries) {
+        continue;
+      }
       if (isSerializationFailure(error)) {
         deny(
           'MUTUAL_SETTLEMENT_CONCURRENCY_RETRY_EXHAUSTED',
           'Mutual settlement concurrency retries exhausted',
+        );
+      }
+      if (isUniqueConflict(error)) {
+        deny(
+          'MUTUAL_SETTLEMENT_REPLAY_OR_CONFLICT',
+          'Mutual settlement collided with existing immutable protocol evidence',
         );
       }
       throw error;
