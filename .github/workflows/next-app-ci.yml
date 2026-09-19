@@ -96,6 +96,9 @@ jobs:
       - name: M8 Dispute bilateral MUTUAL_SPLIT
         run: node --test tests/v2-m8-dispute-mutual-split.test.mjs
 
+      - name: M9 terminal ReputationEvidence
+        run: node --test tests/v2-m9-terminal-reputation-evidence.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -119,6 +122,9 @@ jobs:
 
       - name: M8 changed-code lint
         run: npm run lint:m8
+
+      - name: M9 changed-code lint
+        run: npm run lint:m9
 
       - name: Typecheck
         run: npm run typecheck
