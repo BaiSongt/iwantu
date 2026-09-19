@@ -14,6 +14,12 @@ import {
   hashEconomicCommandEvidence,
   SignedEconomicCommandError,
 } from './signed-economic-command.mjs';
+import {
+  buildReworkAuthorizationEvidence,
+  hashReworkAuthorizationEvidence,
+  resolveContractDeliveryPolicy,
+  ReworkPolicyError,
+} from './rework-policy.mjs';
 
 const ACCEPTANCE_PROTOCOL_VERSION = 'iwantu-delivery-acceptance/0.1';
 const MAX_COMMAND_TTL_MS = 10 * 60 * 1000;
@@ -242,6 +248,67 @@ function isSerializationFailure(error) {
   return /could not serialize access|serialization|sqlstate.?40001|\b40001\b/i.test(diagnostic);
 }
 
+
+async function resolveRejectionDisposition(tx, contract, delivery, rejectionDecision, now) {
+  const offerRevision = await tx.offerRevision.findUnique({
+    where: { id: contract.acceptedOfferRevisionId },
+    select: { termsPayload: true },
+  });
+  if (!offerRevision) {
+    deny('REWORK_OFFER_REVISION_NOT_FOUND', 'Accepted Offer revision no longer resolves');
+  }
+
+  let policy;
+  try {
+    policy = resolveContractDeliveryPolicy(offerRevision.termsPayload);
+  } catch (error) {
+    if (error instanceof ReworkPolicyError) {
+      deny('REWORK_POLICY_INVALID', error.message, error.details);
+    }
+    throw error;
+  }
+
+  if (!policy.explicitRework || delivery.sequence >= policy.maxAttempts) {
+    return { nextState: 'disputed', reworkAuthorization: null, policy };
+  }
+
+  const reworkDeadline = new Date(now.getTime() + policy.reworkWindowSeconds * 1000);
+  const evidence = buildReworkAuthorizationEvidence({
+    contractId: contract.id,
+    effectiveContractHash: contract.effectiveContractHash,
+    rejectionDecisionId: rejectionDecision.id,
+    rejectionDecisionHash: rejectionDecision.decisionHash,
+    deliveryId: delivery.id,
+    deliveryHash: delivery.deliveryHash,
+    rejectedSequence: delivery.sequence,
+    nextSequence: delivery.sequence + 1,
+    maxAttempts: policy.maxAttempts,
+    reworkWindowSeconds: policy.reworkWindowSeconds,
+    reworkDeadline,
+  });
+  const evidenceHash = hashReworkAuthorizationEvidence(evidence);
+  const id = randomUUID();
+
+  const rows = await tx.$queryRaw(
+    Prisma.sql`
+      INSERT INTO "rework_authorizations" (
+        "id", "contractId", "rejectionDecisionId", "deliveryId",
+        "effectiveContractHash", "deliveryHash", "rejectedSequence",
+        "nextSequence", "maxAttempts", "reworkWindowSeconds",
+        "reworkDeadline", "evidenceHash"
+      ) VALUES (
+        ${id}, ${contract.id}, ${rejectionDecision.id}, ${delivery.id},
+        ${contract.effectiveContractHash}, ${delivery.deliveryHash}, ${delivery.sequence},
+        ${delivery.sequence + 1}, ${policy.maxAttempts}, ${policy.reworkWindowSeconds},
+        ${reworkDeadline}, ${evidenceHash}
+      )
+      RETURNING *
+    `,
+  );
+
+  return { nextState: 'rework', reworkAuthorization: rows[0], policy };
+}
+
 async function decideInTransaction(tx, authentication, input, now) {
   const idempotencyKey = nonEmpty(input?.decisionIdempotencyKey, 'decisionIdempotencyKey');
   const existing = await loadExisting(tx, idempotencyKey);
@@ -251,7 +318,22 @@ async function decideInTransaction(tx, authentication, input, now) {
     const escrow = contractRows[0]?.escrowId
       ? await tx.escrow.findUnique({ where: { id: contractRows[0].escrowId } })
       : null;
-    return { acceptanceDecision: existing, contract: contractRows[0] ?? null, escrow, idempotent: true };
+    const reworkAuthorization = existing.decision === 'reject'
+      ? (await tx.$queryRaw(
+          Prisma.sql`
+            SELECT * FROM "rework_authorizations"
+            WHERE "rejectionDecisionId" = ${existing.id}
+            LIMIT 1
+          `,
+        ))[0] ?? null
+      : null;
+    return {
+      acceptanceDecision: existing,
+      contract: contractRows[0] ?? null,
+      escrow,
+      reworkAuthorization,
+      idempotent: true,
+    };
   }
 
   await assertLiveAccessIdentity(tx, authentication, now);
@@ -369,11 +451,20 @@ async function decideInTransaction(tx, authentication, input, now) {
     `,
   );
 
+  let reworkAuthorization = null;
   if (decision === 'reject') {
+    const disposition = await resolveRejectionDisposition(
+      tx,
+      contract,
+      delivery,
+      inserted[0],
+      now,
+    );
+    reworkAuthorization = disposition.reworkAuthorization;
     await tx.$executeRaw(
       Prisma.sql`
         UPDATE "contracts"
-        SET "lifecycleState" = 'rework'::"ContractLifecycleState"
+        SET "lifecycleState" = ${disposition.nextState}::"ContractLifecycleState"
         WHERE "id" = ${contractId}
       `,
     );
@@ -390,6 +481,7 @@ async function decideInTransaction(tx, authentication, input, now) {
     authoritySnapshot,
     contract: contractRows[0],
     escrow,
+    reworkAuthorization,
     idempotent: false,
   };
 }
