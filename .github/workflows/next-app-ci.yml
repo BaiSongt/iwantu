@@ -87,6 +87,9 @@ jobs:
       - name: M5 atomic terminal Settlement
         run: node --test tests/v2-m5-atomic-settlement.test.mjs
 
+      - name: M6 Supplier Default atomic full refund
+        run: node --test tests/v2-m6-supplier-default-refund.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -101,6 +104,9 @@ jobs:
 
       - name: M5 changed-code lint
         run: npm run lint:m5
+
+      - name: M6 changed-code lint
+        run: npm run lint:m6
 
       - name: Typecheck
         run: npm run typecheck
