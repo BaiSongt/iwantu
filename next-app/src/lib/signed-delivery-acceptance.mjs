@@ -20,6 +20,7 @@ import {
   resolveContractDeliveryPolicy,
   ReworkPolicyError,
 } from './rework-policy.mjs';
+import { createDisputeInTransaction } from './dispute-protocol.mjs';
 
 const ACCEPTANCE_PROTOCOL_VERSION = 'iwantu-delivery-acceptance/0.1';
 const MAX_COMMAND_TTL_MS = 10 * 60 * 1000;
@@ -268,8 +269,21 @@ async function resolveRejectionDisposition(tx, contract, delivery, rejectionDeci
     throw error;
   }
 
-  if (!policy.explicitRework || delivery.sequence >= policy.maxAttempts) {
-    return { nextState: 'disputed', reworkAuthorization: null, policy };
+  if (!policy.explicitRework) {
+    return {
+      nextState: 'disputed',
+      reworkAuthorization: null,
+      policy,
+      disputeReasonCode: 'rework_not_granted',
+    };
+  }
+  if (delivery.sequence >= policy.maxAttempts) {
+    return {
+      nextState: 'disputed',
+      reworkAuthorization: null,
+      policy,
+      disputeReasonCode: 'attempts_exhausted',
+    };
   }
 
   const reworkDeadline = new Date(now.getTime() + policy.reworkWindowSeconds * 1000);
@@ -306,7 +320,12 @@ async function resolveRejectionDisposition(tx, contract, delivery, rejectionDeci
     `,
   );
 
-  return { nextState: 'rework', reworkAuthorization: rows[0], policy };
+  return {
+    nextState: 'rework',
+    reworkAuthorization: rows[0],
+    policy,
+    disputeReasonCode: null,
+  };
 }
 
 async function decideInTransaction(tx, authentication, input, now) {
@@ -327,11 +346,21 @@ async function decideInTransaction(tx, authentication, input, now) {
           `,
         ))[0] ?? null
       : null;
+    const dispute = existing.decision === 'reject'
+      ? (await tx.$queryRaw(
+          Prisma.sql`
+            SELECT * FROM "disputes"
+            WHERE "rejectionDecisionId" = ${existing.id}
+            LIMIT 1
+          `,
+        ))[0] ?? null
+      : null;
     return {
       acceptanceDecision: existing,
       contract: contractRows[0] ?? null,
       escrow,
       reworkAuthorization,
+      dispute,
       idempotent: true,
     };
   }
@@ -452,6 +481,7 @@ async function decideInTransaction(tx, authentication, input, now) {
   );
 
   let reworkAuthorization = null;
+  let dispute = null;
   if (decision === 'reject') {
     const disposition = await resolveRejectionDisposition(
       tx,
@@ -461,6 +491,19 @@ async function decideInTransaction(tx, authentication, input, now) {
       now,
     );
     reworkAuthorization = disposition.reworkAuthorization;
+    if (disposition.nextState === 'disputed') {
+      const created = await createDisputeInTransaction(tx, {
+        contractId: contract.id,
+        effectiveContractHash: contract.effectiveContractHash,
+        deliveryId: delivery.id,
+        deliveryHash: delivery.deliveryHash,
+        rejectionDecisionId: inserted[0].id,
+        rejectionDecisionHash: inserted[0].decisionHash,
+        reasonCode: disposition.disputeReasonCode,
+        openedAt: inserted[0].decidedAt,
+      });
+      dispute = created.dispute;
+    }
     await tx.$executeRaw(
       Prisma.sql`
         UPDATE "contracts"
@@ -482,6 +525,7 @@ async function decideInTransaction(tx, authentication, input, now) {
     contract: contractRows[0],
     escrow,
     reworkAuthorization,
+    dispute,
     idempotent: false,
   };
 }
