@@ -362,8 +362,8 @@ function assertReplayMatches(
     || agreement.buyerAgentIdentityId !== buyerAuthentication?.agent?.id
     || agreement.supplierPrincipalId !== supplierAuthentication?.principal?.id
     || agreement.supplierAgentIdentityId !== supplierAuthentication?.agent?.id
-    || String(agreement.supplierAmount) !== supplier.decimal
-    || String(agreement.buyerRefundAmount) !== refund.decimal
+    || amount(String(agreement.supplierAmount), 'storedSupplierAmount').units !== supplier.units
+    || amount(String(agreement.buyerRefundAmount), 'storedBuyerRefundAmount').units !== refund.units
   ) {
     deny(
       'MUTUAL_SETTLEMENT_IDEMPOTENCY_CONFLICT',
