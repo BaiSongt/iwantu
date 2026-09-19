@@ -342,6 +342,36 @@ async function one(tx, query) {
   return rows[0] ?? null;
 }
 
+function assertReplayMatches(
+  agreement,
+  buyerAuthentication,
+  supplierAuthentication,
+  input,
+) {
+  if (!agreement) {
+    deny(
+      'MUTUAL_SETTLEMENT_REPLAY_EVIDENCE_MISSING',
+      'Terminal mutual Settlement is missing its immutable Agreement',
+    );
+  }
+  const supplier = amount(input.supplierAmount, 'supplierAmount');
+  const refund = amount(input.buyerRefundAmount, 'buyerRefundAmount');
+  if (
+    agreement.contractId !== input.contractId
+    || agreement.buyerPrincipalId !== buyerAuthentication?.principal?.id
+    || agreement.buyerAgentIdentityId !== buyerAuthentication?.agent?.id
+    || agreement.supplierPrincipalId !== supplierAuthentication?.principal?.id
+    || agreement.supplierAgentIdentityId !== supplierAuthentication?.agent?.id
+    || String(agreement.supplierAmount) !== supplier.decimal
+    || String(agreement.buyerRefundAmount) !== refund.decimal
+  ) {
+    deny(
+      'MUTUAL_SETTLEMENT_IDEMPOTENCY_CONFLICT',
+      'Mutual settlement idempotency key is already bound to different bilateral evidence',
+    );
+  }
+}
+
 async function performMutualSplit(
   tx,
   buyerAuthentication,
@@ -370,6 +400,12 @@ async function performMutualSplit(
         SELECT * FROM "mutual_settlement_agreements"
         WHERE "id" = ${existingSettlement.mutualSettlementAgreementId}
       `,
+    );
+    assertReplayMatches(
+      agreement,
+      buyerAuthentication,
+      supplierAuthentication,
+      input,
     );
     return { agreement, settlement: existingSettlement, replayed: true };
   }
