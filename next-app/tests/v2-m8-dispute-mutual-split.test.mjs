@@ -821,3 +821,79 @@ test('M8-02: database blocks disputed Contract close and Escrow release without 
     /ESCROW_RELEASE_REQUIRES_PROTOCOL_SETTLEMENT/,
   );
 });
+
+
+test('M8-03: terminal replay rejects changed allocation under the same idempotency key', async () => {
+  const prepared = await prepareDisputedContract('mutual-replay-conflict');
+  const { fixture } = prepared;
+  const signed = signMutualSettlement(prepared, '15.50000000', '10.00000000');
+
+  const settled = await settleMutualSplit(
+    prisma,
+    fixture.buyer.authentication,
+    fixture.supplier.authentication,
+    signed.input,
+  );
+  assert.equal(settled.replayed, false);
+
+  await assert.rejects(
+    settleMutualSplit(
+      prisma,
+      fixture.buyer.authentication,
+      fixture.supplier.authentication,
+      {
+        ...signed.input,
+        supplierAmount: '10.50000000',
+        buyerRefundAmount: '15.00000000',
+      },
+    ),
+    (error) => error?.code === 'MUTUAL_SETTLEMENT_IDEMPOTENCY_CONFLICT',
+  );
+});
+
+test('M8-03: mutual settlement is a new commitment and requires live bilateral authority', async () => {
+  const prepared = await prepareDisputedContract('mutual-live-authority');
+  const { fixture } = prepared;
+  const signed = signMutualSettlement(prepared, '15.50000000', '10.00000000');
+
+  await prisma.agentIdentity.update({
+    where: { id: fixture.supplier.agent.id },
+    data: { status: 'suspended' },
+  });
+
+  await assert.rejects(
+    settleMutualSplit(
+      prisma,
+      fixture.buyer.authentication,
+      fixture.supplier.authentication,
+      signed.input,
+    ),
+    (error) => error?.code === 'MUTUAL_SETTLEMENT_AGENT_NOT_ACTIVE',
+  );
+
+  const [agreements, settlements, postings, contractRows, escrow] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT "id" FROM "mutual_settlement_agreements"
+      WHERE "contractId" = ${fixture.formed.contract.id}
+    `,
+    prisma.$queryRaw`
+      SELECT "id" FROM "settlements"
+      WHERE "contractId" = ${fixture.formed.contract.id}
+    `,
+    prisma.$queryRaw`
+      SELECT "id" FROM "ledger_transactions"
+      WHERE "referenceType" = 'escrow_mutual_split'
+        AND "referenceId" = ${fixture.formed.contract.id}
+    `,
+    prisma.$queryRaw`
+      SELECT "lifecycleState" FROM "contracts"
+      WHERE "id" = ${fixture.formed.contract.id}
+    `,
+    prisma.escrow.findUniqueOrThrow({ where: { id: fixture.formed.escrow.id } }),
+  ]);
+  assert.equal(agreements.length, 0);
+  assert.equal(settlements.length, 0);
+  assert.equal(postings.length, 0);
+  assert.equal(contractRows[0].lifecycleState, 'disputed');
+  assert.equal(escrow.status, 'locked');
+});
