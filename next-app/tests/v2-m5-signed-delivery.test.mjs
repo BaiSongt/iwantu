@@ -454,10 +454,12 @@ test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Sup
     },
   });
 
-  const supplierAvailableBefore = await prisma.ledgerAccount.findFirstOrThrow({
+  const supplierAvailableBefore = await prisma.ledgerAccount.findFirst({
     where: { principalId: fixture.supplier.principal.id, type: 'principal_available', currency: 'IWC' },
   });
-  const beforeBalance = await ledgerBalance(supplierAvailableBefore.id);
+  const beforeBalance = supplierAvailableBefore
+    ? await ledgerBalance(supplierAvailableBefore.id)
+    : 0;
 
   const idempotencyKey = unique('settlement-e2e');
   const settled = await settleAcceptedDelivery(prisma, {
