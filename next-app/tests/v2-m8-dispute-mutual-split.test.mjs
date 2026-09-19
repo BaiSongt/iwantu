@@ -377,7 +377,7 @@ function signRejection(fixture, delivery, now = new Date()) {
     commandIssuedAt,
     commandExpiresAt,
     signatureAlgorithm: 'EdDSA',
-    signingKeyId: fixture.buyer.signingKeyId,
+    signatureKeyId: fixture.buyer.signingKeyId,
     buyerSignature: signDigest(
       null,
       Buffer.from(hashEconomicCommandEvidence(command), 'hex'),
