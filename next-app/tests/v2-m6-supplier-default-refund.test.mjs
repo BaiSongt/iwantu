@@ -22,6 +22,11 @@ import {
   hashOfferAcceptanceEvidence,
 } from '../src/lib/signed-offer-acceptance.mjs';
 import {
+  buildDeliveryEvidence,
+  hashDeliveryEvidence,
+  submitSignedDelivery,
+} from '../src/lib/signed-delivery.mjs';
+import {
   buildFullRefundSettlementEvidence,
   buildSupplierDefaultEvidence,
   defaultAndRefundContract,
@@ -140,7 +145,7 @@ async function createActor(label, orgType, actionScopes) {
 
 async function createDefaultableContract(label, deliveryCommitmentSeconds = 1) {
   const buyer = await createActor(`buyer-${label}`, 'buyer', ['offer.accept']);
-  const supplier = await createActor(`supplier-${label}`, 'supplier', ['offer.issue']);
+  const supplier = await createActor(`supplier-${label}`, 'supplier', ['offer.issue', 'delivery.submit']);
   const created = await createTask(prisma, {
     issuerPrincipalId: buyer.principal.id,
     issuerAgentIdentityId: buyer.agent.id,
@@ -268,6 +273,59 @@ async function createDefaultableContract(label, deliveryCommitmentSeconds = 1) {
   );
 
   return { buyer, supplier, issued, formed };
+}
+
+function signDelivery(fixture, now = new Date()) {
+  const base = {
+    deliveryIdempotencyKey: unique('m6-delivery'),
+    contractId: fixture.formed.contract.id,
+    effectiveContractHash: fixture.formed.contract.effectiveContractHash,
+    deliverables: [{
+      assetRef: `artifact:${unique('m6-output')}`,
+      mediaType: 'application/json',
+      contentHash: sha256(unique('m6-delivery-content')),
+    }],
+    evidence: [{ kind: 'test', value: 'passed' }],
+    nonce: unique('m6-delivery-nonce'),
+    mandateId: fixture.supplier.mandate.id,
+    commandIssuedAt: new Date(now.getTime() - 1000),
+    commandExpiresAt: new Date(now.getTime() + 5 * 60_000),
+    signatureAlgorithm: 'EdDSA',
+    signatureKeyId: fixture.supplier.signingKeyId,
+  };
+  const deliveryEvidence = buildDeliveryEvidence({
+    deliveryIdempotencyKey: base.deliveryIdempotencyKey,
+    contractId: base.contractId,
+    effectiveContractHash: base.effectiveContractHash,
+    acceptedOfferRevisionId: fixture.formed.contract.acceptedOfferRevisionId,
+    sequence: 1,
+    supplierPrincipalId: fixture.supplier.principal.id,
+    supplierAgentIdentityId: fixture.supplier.agent.id,
+    deliverables: base.deliverables,
+    evidence: base.evidence,
+    nonce: base.nonce,
+  });
+  const deliveryHash = hashDeliveryEvidence(deliveryEvidence);
+  const command = buildEconomicCommandEvidence({
+    action: 'delivery.submit',
+    principalId: fixture.supplier.principal.id,
+    agentIdentityId: fixture.supplier.agent.id,
+    mandateId: fixture.supplier.mandate.id,
+    payloadHash: deliveryHash,
+    nonce: base.nonce,
+    issuedAt: base.commandIssuedAt,
+    expiresAt: base.commandExpiresAt,
+    signingKeyId: base.signatureKeyId,
+    signatureAlgorithm: base.signatureAlgorithm,
+  });
+  return {
+    ...base,
+    supplierSignature: signDigest(
+      null,
+      Buffer.from(hashEconomicCommandEvidence(command), 'hex'),
+      fixture.supplier.privateKey,
+    ).toString('base64url'),
+  };
 }
 
 async function waitUntilDefaultDue(fixture, paddingMs = 150) {
@@ -473,4 +531,143 @@ test('M6-01: database rejects direct Contract close or Escrow refund without ter
     (await prisma.escrow.findUniqueOrThrow({ where: { id: fixture.formed.escrow.id } })).status,
     'locked',
   );
+});
+
+
+test('M6-02: Contract without explicit delivery deadline cannot be classified as Supplier Default', async () => {
+  const fixture = await createDefaultableContract('no-deadline', null);
+  await assert.rejects(
+    defaultAndRefundContract(prisma, {
+      contractId: fixture.formed.contract.id,
+      idempotencyKey: unique('m6-no-deadline'),
+    }),
+    (error) => error?.code === 'SUPPLIER_DEFAULT_REQUIRES_DELIVERY_DEADLINE',
+  );
+});
+
+test('M6-02: protocol-valid Delivery prevents Supplier Default and full refund', async () => {
+  const fixture = await createDefaultableContract('delivery-prevents-default', 2);
+  const now = new Date();
+  const delivery = signDelivery(fixture, now);
+  const delivered = await submitSignedDelivery(
+    prisma,
+    fixture.supplier.authentication,
+    delivery,
+    { now },
+  );
+  assert.equal(delivered.contract.lifecycleState, 'acceptance_pending');
+
+  await delay(2200);
+  await assert.rejects(
+    defaultAndRefundContract(prisma, {
+      contractId: fixture.formed.contract.id,
+      idempotencyKey: unique('m6-delivered-default'),
+    }),
+    (error) => error?.code === 'SUPPLIER_DEFAULT_REQUIRES_ACTIVE_CONTRACT',
+  );
+
+  const defaults = await prisma.$queryRaw`
+    SELECT "id" FROM "supplier_defaults"
+    WHERE "contractId" = ${fixture.formed.contract.id}
+  `;
+  const settlements = await prisma.$queryRaw`
+    SELECT "id" FROM "settlements"
+    WHERE "contractId" = ${fixture.formed.contract.id}
+  `;
+  assert.equal(defaults.length, 0);
+  assert.equal(settlements.length, 0);
+  assert.equal(
+    (await prisma.escrow.findUniqueOrThrow({ where: { id: fixture.formed.escrow.id } })).status,
+    'locked',
+  );
+});
+
+test('M6-02: refund failure after Ledger posting rolls back SupplierDefault and all terminal state', async () => {
+  const fixture = await createDefaultableContract('refund-rollback');
+  const buyerAvailable = await prisma.ledgerAccount.findFirstOrThrow({
+    where: {
+      principalId: fixture.buyer.principal.id,
+      type: 'principal_available',
+      currency: 'IWC',
+    },
+  });
+  const buyerLocked = await prisma.ledgerAccount.findFirstOrThrow({
+    where: {
+      principalId: fixture.buyer.principal.id,
+      type: 'principal_locked',
+      currency: 'IWC',
+    },
+  });
+  await waitUntilDefaultDue(fixture);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE OR REPLACE FUNCTION iwantu_test_fail_full_refund_settlement()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      IF NEW."type" = 'full_refund' THEN
+        RAISE EXCEPTION 'IWANTU_TEST_FULL_REFUND_SETTLEMENT_FAILURE';
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+  `);
+  await prisma.$executeRawUnsafe(
+    'DROP TRIGGER IF EXISTS iwantu_test_fail_full_refund_settlement_trigger ON settlements',
+  );
+  await prisma.$executeRawUnsafe(`
+    CREATE TRIGGER iwantu_test_fail_full_refund_settlement_trigger
+    BEFORE INSERT ON settlements
+    FOR EACH ROW
+    EXECUTE FUNCTION iwantu_test_fail_full_refund_settlement()
+  `);
+
+  try {
+    await assert.rejects(
+      defaultAndRefundContract(prisma, {
+        contractId: fixture.formed.contract.id,
+        idempotencyKey: unique('m6-refund-rollback'),
+      }),
+      /IWANTU_TEST_FULL_REFUND_SETTLEMENT_FAILURE/,
+    );
+
+    const [defaults, settlements, refundPostings, contractRows, escrow] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT "id" FROM "supplier_defaults"
+        WHERE "contractId" = ${fixture.formed.contract.id}
+      `,
+      prisma.$queryRaw`
+        SELECT "id" FROM "settlements"
+        WHERE "contractId" = ${fixture.formed.contract.id}
+      `,
+      prisma.$queryRaw`
+        SELECT "id" FROM "ledger_transactions"
+        WHERE "referenceType" = 'escrow_refund'
+          AND "referenceId" = ${fixture.formed.contract.id}
+      `,
+      prisma.$queryRaw`
+        SELECT * FROM "contracts"
+        WHERE "id" = ${fixture.formed.contract.id}
+      `,
+      prisma.escrow.findUniqueOrThrow({ where: { id: fixture.formed.escrow.id } }),
+    ]);
+
+    assert.equal(defaults.length, 0);
+    assert.equal(settlements.length, 0);
+    assert.equal(refundPostings.length, 0);
+    assert.equal(contractRows[0].lifecycleState, 'active');
+    assert.equal(contractRows[0].closedAt, null);
+    assert.equal(escrow.status, 'locked');
+    assert.equal(escrow.refundLedgerTransactionId, null);
+    assert.equal(await ledgerBalance(buyerAvailable.id), 74.5);
+    assert.equal(await ledgerBalance(buyerLocked.id), 25.5);
+  } finally {
+    await prisma.$executeRawUnsafe(
+      'DROP TRIGGER IF EXISTS iwantu_test_fail_full_refund_settlement_trigger ON settlements',
+    );
+    await prisma.$executeRawUnsafe(
+      'DROP FUNCTION IF EXISTS iwantu_test_fail_full_refund_settlement()',
+    );
+  }
 });
