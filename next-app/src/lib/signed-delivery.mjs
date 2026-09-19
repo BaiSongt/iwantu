@@ -214,6 +214,20 @@ async function loadExisting(tx, idempotencyKey) {
   return rows[0] ?? null;
 }
 
+
+async function loadReworkAuthorization(tx, contractId, nextSequence) {
+  const rows = await tx.$queryRaw(
+    Prisma.sql`
+      SELECT *
+      FROM "rework_authorizations"
+      WHERE "contractId" = ${contractId}
+        AND "nextSequence" = ${nextSequence}
+      LIMIT 1
+    `,
+  );
+  return rows[0] ?? null;
+}
+
 function assertReplayMatches(existing, input, authentication) {
   const normalizedDeliverables = normalizeDeliverables(input.deliverables);
   const normalizedEvidence = normalizeEvidence(input.evidence);
@@ -274,8 +288,40 @@ async function submitInTransaction(tx, authentication, input, now) {
   if (!offerRevision) deny('DELIVERY_OFFER_REVISION_NOT_FOUND', 'Accepted Offer revision no longer resolves');
   let contractDeliveryDeadline = null;
   let deadlineStatus = 'no_explicit_deadline';
-  if (offerRevision.deliveryCommitmentSeconds !== null && offerRevision.deliveryCommitmentSeconds !== undefined) {
-    contractDeliveryDeadline = new Date(contract.activatedAt.getTime() + offerRevision.deliveryCommitmentSeconds * 1000);
+  let reworkAuthorization = null;
+
+  if (contract.lifecycleState === 'rework') {
+    reworkAuthorization = await loadReworkAuthorization(tx, contractId, sequence);
+    if (!reworkAuthorization) {
+      deny(
+        'REWORK_DELIVERY_REQUIRES_AUTHORIZATION',
+        'REWORK Delivery requires an immutable authorization derived from the latest Buyer rejection',
+        { contractId, sequence },
+      );
+    }
+    if (sequence > reworkAuthorization.maxAttempts) {
+      deny('REWORK_ATTEMPTS_EXHAUSTED', 'Contract delivery attempts are exhausted', {
+        contractId,
+        sequence,
+        maxAttempts: reworkAuthorization.maxAttempts,
+      });
+    }
+    contractDeliveryDeadline = new Date(reworkAuthorization.reworkDeadline);
+    if (now.getTime() > contractDeliveryDeadline.getTime()) {
+      deny('REWORK_WINDOW_EXPIRED', 'Rework Delivery was submitted after the contractual rework window', {
+        contractId,
+        sequence,
+        reworkDeadline: contractDeliveryDeadline.toISOString(),
+      });
+    }
+    deadlineStatus = 'rework_on_time';
+  } else if (
+    offerRevision.deliveryCommitmentSeconds !== null
+    && offerRevision.deliveryCommitmentSeconds !== undefined
+  ) {
+    contractDeliveryDeadline = new Date(
+      contract.activatedAt.getTime() + offerRevision.deliveryCommitmentSeconds * 1000,
+    );
     if (now.getTime() > contractDeliveryDeadline.getTime()) {
       deny('DELIVERY_DEADLINE_EXCEEDED', 'Protocol-valid Delivery was submitted after the contractual deadline', {
         contractDeliveryDeadline: contractDeliveryDeadline.toISOString(),
@@ -340,6 +386,7 @@ async function submitInTransaction(tx, authentication, input, now) {
       signingCredentialId: signingCredential.id,
       signingKeyId,
       signatureAlgorithm,
+      reworkAuthorizationId: reworkAuthorization?.id ?? null,
     },
     now,
   );
@@ -385,6 +432,7 @@ async function submitInTransaction(tx, authentication, input, now) {
     commandHash,
     contract: { ...contract, lifecycleState: 'acceptance_pending' },
     escrow,
+    reworkAuthorization,
     idempotent: false,
   };
 }
