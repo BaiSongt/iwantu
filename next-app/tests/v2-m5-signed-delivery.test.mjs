@@ -51,6 +51,23 @@ function sha256(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+
+async function ledgerBalance(accountId) {
+  const rows = await prisma.$queryRaw`
+    SELECT COALESCE(sum(CASE
+      WHEN t."status" = 'posted' AND e."side" = 'credit' THEN e."amount"
+      WHEN t."status" = 'posted' AND e."side" = 'debit' THEN -e."amount"
+      ELSE 0
+    END), 0)::DECIMAL(36,8) AS "balance"
+    FROM "ledger_accounts" a
+    LEFT JOIN "ledger_entries" e ON e."accountId" = a."id"
+    LEFT JOIN "ledger_transactions" t ON t."id" = e."transactionId"
+    WHERE a."id" = ${accountId}
+    GROUP BY a."id"
+  `;
+  return Number(rows[0]?.balance ?? 0);
+}
+
 async function createActor(label, orgType, actionScopes) {
   const suffix = unique(label);
   const organization = await prisma.organization.create({
@@ -437,11 +454,10 @@ test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Sup
     },
   });
 
-  const supplierAccountsBefore = await prisma.ledgerAccount.findMany({
-    where: { principalId: fixture.supplier.principal.id, currency: 'IWC' },
+  const supplierAvailableBefore = await prisma.ledgerAccount.findFirstOrThrow({
+    where: { principalId: fixture.supplier.principal.id, type: 'principal_available', currency: 'IWC' },
   });
-  const supplierAvailableBefore = supplierAccountsBefore.find((account) => account.type === 'principal_available');
-  const beforeBalance = Number(supplierAvailableBefore?.balance ?? 0);
+  const beforeBalance = await ledgerBalance(supplierAvailableBefore.id);
 
   const idempotencyKey = unique('settlement-e2e');
   const settled = await settleAcceptedDelivery(prisma, {
@@ -456,7 +472,7 @@ test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Sup
   const [contractRows, escrow, supplierAvailableAfter, ledgerRows] = await Promise.all([
     prisma.$queryRaw`SELECT * FROM "contracts" WHERE "id" = ${fixture.formed.contract.id}`,
     prisma.escrow.findUnique({ where: { id: fixture.formed.escrow.id } }),
-    prisma.ledgerAccount.findFirst({
+    prisma.ledgerAccount.findFirstOrThrow({
       where: { principalId: fixture.supplier.principal.id, type: 'principal_available', currency: 'IWC' },
     }),
     prisma.$queryRaw`SELECT * FROM "ledger_transactions" WHERE "id" = ${settled.settlement.ledgerTransactionId}`,
@@ -465,7 +481,8 @@ test('M5-03D: PostgreSQL E2E settles an accepted Delivery exactly once after Sup
   assert.equal(escrow.status, 'released');
   assert.equal(escrow.releaseLedgerTransactionId, settled.settlement.ledgerTransactionId);
   assert.equal(ledgerRows.length, 1);
-  assert.equal(Number(supplierAvailableAfter.balance) - beforeBalance, Number(escrow.amount));
+  const afterBalance = await ledgerBalance(supplierAvailableAfter.id);
+  assert.equal(afterBalance - beforeBalance, Number(escrow.amount));
 
   const replay = await settleAcceptedDelivery(prisma, {
     contractId: fixture.formed.contract.id,
