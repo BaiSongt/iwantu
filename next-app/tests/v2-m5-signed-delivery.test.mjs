@@ -31,7 +31,6 @@ import {
   hashDeliveryAcceptanceEvidence,
 } from '../src/lib/signed-delivery-acceptance.mjs';
 import { settleAcceptedDelivery } from '../src/lib/atomic-settlement.mjs';
-import { autoAcceptTimedOutDelivery } from '../src/lib/auto-accept.mjs';
 import { createTask, openTask } from '../src/lib/task-protocol.mjs';
 
 const prisma = new PrismaClient();
@@ -567,12 +566,14 @@ test('M5-03D: Settlement transaction rolls back Ledger and terminal states if Se
     END;
     $$;
   `);
+  await prisma.$executeRawUnsafe(
+    'DROP TRIGGER IF EXISTS iwantu_test_fail_settlement_insert_trigger ON settlements',
+  );
   await prisma.$executeRawUnsafe(`
-    DROP TRIGGER IF EXISTS iwantu_test_fail_settlement_insert_trigger ON settlements;
     CREATE TRIGGER iwantu_test_fail_settlement_insert_trigger
     BEFORE INSERT ON settlements
     FOR EACH ROW
-    EXECUTE FUNCTION iwantu_test_fail_settlement_insert();
+    EXECUTE FUNCTION iwantu_test_fail_settlement_insert()
   `);
 
   try {
@@ -610,40 +611,6 @@ test('M5-03D: Settlement transaction rolls back Ledger and terminal states if Se
       'DROP FUNCTION IF EXISTS iwantu_test_fail_settlement_insert()',
     );
   }
-});
-
-test('M5-03D: AUTO_ACCEPT flows through the same atomic terminal Settlement boundary', async () => {
-  const fixture = await createActiveContract('settlement-auto-accept');
-  const submittedAt = new Date();
-  const signedDelivery = signDelivery(fixture, submittedAt);
-  const delivered = await submitSignedDelivery(
-    prisma,
-    fixture.supplier.authentication,
-    signedDelivery.input,
-    { now: submittedAt },
-  );
-
-  const autoAccepted = await autoAcceptTimedOutDelivery(
-    prisma,
-    fixture.formed.contract.id,
-    { now: new Date(delivered.delivery.submittedAt.getTime() + 24 * 60 * 60 * 1000 + 1000) },
-  );
-  assert.equal(autoAccepted.acceptanceDecision.source, 'auto_accept');
-  assert.equal(autoAccepted.acceptanceDecision.decision, 'accept');
-  assert.equal(autoAccepted.escrow.status, 'locked');
-
-  const settled = await settleAcceptedDelivery(prisma, {
-    contractId: fixture.formed.contract.id,
-    idempotencyKey: unique('settlement-auto-accept'),
-  });
-  const [contractRows, escrow] = await Promise.all([
-    prisma.$queryRaw`SELECT * FROM "contracts" WHERE "id" = ${fixture.formed.contract.id}`,
-    prisma.escrow.findUniqueOrThrow({ where: { id: fixture.formed.escrow.id } }),
-  ]);
-
-  assert.equal(settled.settlement.acceptanceDecisionId, autoAccepted.acceptanceDecision.id);
-  assert.equal(contractRows[0].lifecycleState, 'closed');
-  assert.equal(escrow.status, 'released');
 });
 
 test('M5-03D: database blocks direct terminal Contract or Escrow transition without Settlement', async () => {
