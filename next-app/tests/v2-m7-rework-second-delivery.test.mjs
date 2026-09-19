@@ -573,3 +573,112 @@ test('M7-01: expired rework window rejects second Delivery without consuming an 
   `;
   assert.equal(contractRows[0].lifecycleState, 'rework');
 });
+
+
+test('M7-02: database rejects direct ACCEPTANCE_PENDING to REWORK transition without ReworkAuthorization', async () => {
+  const fixture = await createContract('rework-state-bypass');
+  const first = await submitSignedDelivery(
+    prisma,
+    fixture.supplier.authentication,
+    signDelivery(fixture, 1).input,
+  );
+  assert.equal(first.contract.lifecycleState, 'acceptance_pending');
+
+  await assert.rejects(
+    prisma.$executeRaw`
+      UPDATE "contracts"
+      SET "lifecycleState" = 'rework'::"ContractLifecycleState"
+      WHERE "id" = ${fixture.formed.contract.id}
+    `,
+    /REWORK_REQUIRES_PROTOCOL_AUTHORIZATION/,
+  );
+
+  const contractRows = await prisma.$queryRaw`
+    SELECT "lifecycleState" FROM "contracts"
+    WHERE "id" = ${fixture.formed.contract.id}
+  `;
+  assert.equal(contractRows[0].lifecycleState, 'acceptance_pending');
+});
+
+test('M7-02: replayed Buyer rejection returns the same immutable ReworkAuthorization', async () => {
+  const fixture = await createContract('rework-replay');
+  const first = await submitSignedDelivery(
+    prisma,
+    fixture.supplier.authentication,
+    signDelivery(fixture, 1).input,
+  );
+  const rejectInput = signDecision(
+    fixture,
+    first.delivery,
+    'reject',
+    new Date(),
+    'INCOMPLETE',
+  );
+
+  const original = await decideSignedDelivery(
+    prisma,
+    fixture.buyer.authentication,
+    rejectInput,
+  );
+  const replay = await decideSignedDelivery(
+    prisma,
+    fixture.buyer.authentication,
+    rejectInput,
+  );
+
+  assert.equal(original.reworkAuthorization.id, replay.reworkAuthorization.id);
+  assert.equal(replay.idempotent, true);
+
+  const rows = await prisma.$queryRaw`
+    SELECT "id" FROM "rework_authorizations"
+    WHERE "contractId" = ${fixture.formed.contract.id}
+  `;
+  assert.equal(rows.length, 1);
+});
+
+test('M7-02: concurrent second Delivery commands consume one rework attempt exactly once', async () => {
+  const fixture = await createContract('rework-concurrency');
+  const first = await submitSignedDelivery(
+    prisma,
+    fixture.supplier.authentication,
+    signDelivery(fixture, 1).input,
+  );
+  const rejected = await decideSignedDelivery(
+    prisma,
+    fixture.buyer.authentication,
+    signDecision(fixture, first.delivery, 'reject', new Date(), 'INCOMPLETE'),
+  );
+  assert.equal(rejected.contract.lifecycleState, 'rework');
+
+  const left = signDelivery(fixture, 2);
+  const right = signDelivery(fixture, 2);
+  const results = await Promise.allSettled([
+    submitSignedDelivery(prisma, fixture.supplier.authentication, left.input),
+    submitSignedDelivery(prisma, fixture.supplier.authentication, right.input),
+  ]);
+
+  const fulfilled = results.filter((result) => result.status === 'fulfilled');
+  const rejectedResults = results.filter((result) => result.status === 'rejected');
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejectedResults.length, 1);
+  assert.ok(
+    rejectedResults[0].reason?.code === 'DELIVERY_CONTRACT_STATE_INVALID'
+      || rejectedResults[0].reason?.code === 'IDEMPOTENCY_CONFLICT'
+      || /DELIVERY_CONTRACT_STATE_INVALID|serialization|concurrent/i.test(
+        rejectedResults[0].reason?.message ?? '',
+      ),
+  );
+
+  const deliveries = await prisma.$queryRaw`
+    SELECT "sequence" FROM "deliveries"
+    WHERE "contractId" = ${fixture.formed.contract.id}
+    ORDER BY "sequence"
+  `;
+  assert.deepEqual(deliveries.map((row) => row.sequence), [1, 2]);
+
+  const contractRows = await prisma.$queryRaw`
+    SELECT "lifecycleState" FROM "contracts"
+    WHERE "id" = ${fixture.formed.contract.id}
+  `;
+  assert.equal(contractRows[0].lifecycleState, 'acceptance_pending');
+});
