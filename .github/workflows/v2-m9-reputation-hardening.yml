@@ -1,0 +1,35 @@
+name: v2-m9-reputation-hardening
+
+on:
+  pull_request:
+    paths:
+      - 'next-app/prisma/migrations/20260919161000_v2_m9_terminal_reputation_evidence/**'
+      - 'next-app/tests/v2-m9-reputation-evidence-hardening.test.mjs'
+      - '.github/workflows/v2-m9-reputation-hardening.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'next-app/prisma/migrations/20260919161000_v2_m9_terminal_reputation_evidence/**'
+      - 'next-app/tests/v2-m9-reputation-evidence-hardening.test.mjs'
+      - '.github/workflows/v2-m9-reputation-hardening.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hardening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: next-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: M9 evidence architecture hardening
+        run: node --test tests/v2-m9-reputation-evidence-hardening.test.mjs
