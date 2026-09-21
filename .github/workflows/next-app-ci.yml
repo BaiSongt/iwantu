@@ -108,6 +108,9 @@ jobs:
       - name: M10 Capability Reputation
         run: node --test tests/v2-m10-capability-reputation.test.mjs
 
+      - name: M10 Reputation Passport
+        run: node --test tests/v2-m10-reputation-passport.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
