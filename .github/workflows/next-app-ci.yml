@@ -111,6 +111,9 @@ jobs:
       - name: M10 Reputation Passport
         run: node --test tests/v2-m10-reputation-passport.test.mjs
 
+      - name: M10 PostgreSQL rebuild hardening
+        run: node --test tests/v2-m10-reputation-rebuild-postgres.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
