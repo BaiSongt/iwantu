@@ -102,6 +102,9 @@ jobs:
       - name: M10 ReputationSnapshot foundation
         run: node --test tests/v2-m10-reputation-snapshot-foundation.test.mjs
 
+      - name: M10 Local and Global Trust
+        run: node --test tests/v2-m10-local-global-trust.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
