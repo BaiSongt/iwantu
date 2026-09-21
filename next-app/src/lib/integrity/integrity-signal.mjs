@@ -146,9 +146,9 @@ export async function emitIntegritySignal(prisma, input) {
         ${normalized.signalClass},
         CAST(${evidenceJson} AS jsonb),
         CAST(${metricsJson} AS jsonb),
-        ${normalized.basisStart},
-        ${normalized.basisEnd},
-        ${normalized.observedAt}
+        CAST(${normalized.basisStart} AS timestamp(3)),
+        CAST(${normalized.basisEnd} AS timestamp(3)),
+        CAST(${normalized.observedAt} AS timestamp(3))
       )
     `,
   );
