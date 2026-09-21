@@ -197,7 +197,7 @@ BEGIN
     'caprep:' ||
     NEW."subjectPrincipalId" || ':' ||
     NEW."subjectAgentIdentityId" || ':' ||
-    encode(digest(NEW."capabilityId", 'sha256'), 'hex') || ':' ||
+    NEW."capabilityId" || ':' ||
     NEW."projectionVersion";
 
   IF NEW."projectionVersion" <> 'iwantu.capability-reputation.v0.1'
@@ -242,7 +242,7 @@ BEGIN
     'caprep:' ||
     p_subject_principal_id || ':' ||
     p_subject_agent_identity_id || ':' ||
-    encode(digest(p_capability_id, 'sha256'), 'hex') || ':' ||
+    p_capability_id || ':' ||
     projection_version;
 
   canonical_projection := "iwantu_build_capability_reputation_projection"(
