@@ -99,6 +99,9 @@ jobs:
       - name: M9 terminal ReputationEvidence
         run: node --test tests/v2-m9-terminal-reputation-evidence.test.mjs
 
+      - name: M10 ReputationSnapshot foundation
+        run: node --test tests/v2-m10-reputation-snapshot-foundation.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -125,6 +128,9 @@ jobs:
 
       - name: M9 changed-code lint
         run: npm run lint:m9
+
+      - name: M10 changed-code lint
+        run: npm run lint:m10
 
       - name: Typecheck
         run: npm run typecheck
