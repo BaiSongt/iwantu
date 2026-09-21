@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-08
+Updated: 2026-09-21
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -288,21 +288,122 @@ This means neither an application helper nor a direct Prisma status update can b
 
 M3 stops here. It does not introduce Contract, Escrow reservation at acceptance, Delivery, Acceptance, Settlement, Reputation, or legacy Demand/Proposal production cutover merely to complete the pre-Contract protocol boundary.
 
-## M4 — Contract Formation — NEXT
+## M4 — Contract Formation — COMPLETE
 
-M4 should begin from the existing `offer-contract-formation-v0.1.md` protocol baseline rather than extending M3 further.
+Established the protocol-native atomic formation boundary:
 
-The first M4 slice should establish the immutable Contract formation aggregate and atomic formation boundary for one exact current TaskRevision plus one exact verified Firm Offer. Contract Formation must consume, not weaken, the existing M1 authority, M2 ledger/escrow and M3 integrity gates.
+- exact current sealed TaskRevision/hash binding;
+- exact current ACTIVE Firm Offer revision/hash binding;
+- Buyer signed acceptance command and fresh AuthoritySnapshot;
+- Supplier historical Firm Offer integrity verification;
+- atomic Buyer IWC Escrow reservation;
+- immutable Contract creation;
+- exactly-one Contract per Task under idempotency/concurrency;
+- Task AWARDED and Offer terminal transitions in the same formation boundary.
 
-The initial formation path should fail closed unless it can bind:
+M4 preserves the rule that Contract Formation consumes M1 authority, M2 ledger/escrow and M3 Task/Offer integrity rather than bypassing them.
 
-- current OPEN Task + exact sealed TaskRevision/hash;
-- current ACTIVE, unexpired, non-stale Firm Offer + exact OfferRevision/hash;
-- stored Firm Offer historical integrity verification;
-- authenticated requester Principal/Agent and live acceptance authority;
-- canonical signed acceptance command evidence;
-- atomic reservation of the required buyer economic capacity through the M2 ledger/escrow foundation;
-- one immutable Contract id and formation evidence;
-- atomic Task/Offer terminal transitions reserved by M3 for Contract Formation.
+## M5 — Delivery / Acceptance / Settlement — COMPLETE
 
-Delivery, execution acceptance, settlement and reputation remain later milestones.
+Established the positive terminal execution path:
+
+```text
+ACTIVE Contract
+→ signed immutable Delivery
+→ ACCEPTANCE_PENDING
+→ Buyer ACCEPT or deterministic AUTO_ACCEPT
+→ atomic FULL_SETTLEMENT
+→ Ledger posting
+→ Escrow RELEASED
+→ Contract CLOSED
+```
+
+PostgreSQL gates preserve signed Delivery evidence, acceptance provenance, exactly-one terminal Settlement, rollback atomicity and obligation continuity after later authority revocation.
+
+## M6 — Supplier Default / Full Refund — COMPLETE
+
+Established deterministic negative terminal handling when an explicit contractual delivery deadline expires without a protocol-valid Delivery:
+
+- immutable SupplierDefault evidence;
+- atomic FULL_REFUND Settlement;
+- Buyer Locked → Available Ledger restoration;
+- Escrow REFUNDED and Contract CLOSED in the same transaction;
+- concurrent/replayed refund convergence and rollback hardening.
+
+## M7 — Rework — COMPLETE
+
+Established the bounded REJECT → REWORK path:
+
+- REJECT remains a Buyer claim and does not itself move funds;
+- immutable ReworkAuthorization is derived from the signed delivery policy;
+- one authorized second-delivery attempt is consumed exactly once;
+- exhausted or non-entitled rework transitions to DISPUTED while Escrow remains locked.
+
+## M8 — Dispute / Bilateral Mutual Split — COMPLETE
+
+Established the first disputed terminal resolution path:
+
+```text
+final REJECT
+→ immutable Dispute
+→ Buyer + Supplier sign one MutualSettlementAgreement hash
+→ one balanced MUTUAL_SPLIT Ledger transaction
+→ immutable terminal Settlement
+→ Escrow RELEASED
+→ Contract CLOSED
+```
+
+Partial settlement is never inferred from platform judgment; the implemented path requires bilateral signed agreement.
+
+## M9 — Terminal ReputationEvidence — COMPLETE
+
+Merged to `master` through PR #40; master closure SHA: `00e3bdd6ecf4e11b53c0ce1cf765720da6984f16`.
+
+M9 establishes Settlement-derived immutable reputation facts:
+
+- terminal Settlement is the automatic reputation emission boundary;
+- Buyer and Supplier each receive transaction and economic evidence;
+- evidence binds Contract, Settlement, counterparties and terminal outcome;
+- intermediate REJECT/REWORK/DISPUTED claims do not directly mutate reputation;
+- direct fabricated evidence fails closed;
+- ReputationEvidence UPDATE/DELETE is prohibited;
+- one evidence row per Settlement / subject role / evidence class;
+- migration backfill uses the same canonical builder and remains idempotent;
+- mutable score/level/rating is not protocol truth.
+
+## M10 — Trust Read Models / Reputation Passport — IN PROGRESS
+
+Goal:
+
+> Consume immutable M9 ReputationEvidence into rebuildable machine-readable trust projections without turning derived scores into protocol truth.
+
+Current implementation stack:
+
+- V2-M10-01 — deterministic `ReputationSnapshot` foundation — **IMPLEMENTED / PR #42 PENDING GATE**;
+- V2-M10-02 — directional Local Trust + independent-Principal Global Trust evidence basis — **IMPLEMENTED / PR #43 STACKED**;
+- V2-M10-03 — capability-specific evidence projection at AgentIdentity scope — **IMPLEMENTED / PR #45 STACKED**;
+- V2-M10-04 — public machine-readable Reputation Passport API — **IMPLEMENTED / PR #46 STACKED**;
+- V2-M10-05 — PostgreSQL rebuild/tamper/cache hardening — **IN IMPLEMENTATION**.
+
+M10 invariants:
+
+- ReputationEvidence remains the source of truth; snapshots are disposable derived state;
+- `INSUFFICIENT_EVIDENCE` is distinct from low trust;
+- Local Trust is directional and may include repeated/same-Principal relationships;
+- Global Trust basis excludes same-Principal transactions and exposes diversity/repetition/concentration separately;
+- no opaque platform trust score is introduced in M10;
+- capability attribution follows immutable accepted Task capability requirements;
+- execution `AgentVersion` is currently not bound by Contract/Delivery/Settlement, so version-scoped reputation is explicitly unavailable rather than inferred (Issue #44);
+- Integrity signals are not fabricated; Passport reports them unavailable until the Integrity milestone.
+
+Public v2 read surface introduced by M10-04:
+
+```text
+GET /api/public/v2/agent-identities/{id}/reputation-passport
+```
+
+This route is intentionally separate from the legacy `/api/public/agents` AgentProduct surface.
+
+## Next after M10
+
+After M10 is merged and its full PostgreSQL/CI gates are green, the next trust milestone should introduce the Integrity Engine as a separate evidence-weighting/risk-signal layer. It must consume, not rewrite, ReputationEvidence and M10 projections. The first Integrity slice should implement rule outputs and action-ladder semantics without AI-based judgment.
