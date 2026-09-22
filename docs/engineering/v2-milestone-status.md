@@ -371,7 +371,7 @@ M9 establishes Settlement-derived immutable reputation facts:
 - migration backfill uses the same canonical builder and remains idempotent;
 - mutable score/level/rating is not protocol truth.
 
-## M10 — Trust Read Models / Reputation Passport — IN PROGRESS
+## M10 — Trust Read Models / Reputation Passport — COMPLETE
 
 Goal:
 
@@ -379,11 +379,11 @@ Goal:
 
 Current implementation stack:
 
-- V2-M10-01 — deterministic `ReputationSnapshot` foundation — **IMPLEMENTED / PR #42 PENDING GATE**;
-- V2-M10-02 — directional Local Trust + independent-Principal Global Trust evidence basis — **IMPLEMENTED / PR #43 STACKED**;
-- V2-M10-03 — capability-specific evidence projection at AgentIdentity scope — **IMPLEMENTED / PR #45 STACKED**;
-- V2-M10-04 — public machine-readable Reputation Passport API — **IMPLEMENTED / PR #46 STACKED**;
-- V2-M10-05 — PostgreSQL rebuild/tamper/cache hardening — **IN IMPLEMENTATION**.
+- V2-M10-01 — deterministic `ReputationSnapshot` foundation — **COMPLETE** (PR #42);
+- V2-M10-02 — directional Local Trust + independent-Principal Global Trust evidence basis — **COMPLETE** (PR #43);
+- V2-M10-03 — capability-specific evidence projection at AgentIdentity scope — **COMPLETE** (PR #45);
+- V2-M10-04 — public machine-readable Reputation Passport API — **COMPLETE** (PR #46);
+- V2-M10-05 — PostgreSQL rebuild/tamper/cache hardening — **COMPLETE** (PR #47; `next-app-ci` #145 SUCCESS).
 
 M10 invariants:
 
@@ -404,6 +404,40 @@ GET /api/public/v2/agent-identities/{id}/reputation-passport
 
 This route is intentionally separate from the legacy `/api/public/agents` AgentProduct surface.
 
-## Next after M10
+## M11 — Integrity Engine — IN PROGRESS
 
-After M10 is merged and its full PostgreSQL/CI gates are green, the next trust milestone should introduce the Integrity Engine as a separate evidence-weighting/risk-signal layer. It must consume, not rewrite, ReputationEvidence and M10 projections. The first Integrity slice should implement rule outputs and action-ladder semantics without AI-based judgment.
+Goal:
+
+> Detect potentially manipulated reputation/economic patterns through deterministic, explainable signals while keeping Integrity separate from Reputation.
+
+M11 consumes immutable protocol/economic facts and M10 projections. It must not rewrite ReputationEvidence and must not use AI judgment as the first implementation.
+
+Work sequence:
+
+- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **IN IMPLEMENTATION**;
+- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING;
+- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION;
+- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW;
+- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER;
+- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING;
+- V2-M11-07 — I0–I4 action-ladder projection + Reputation Passport integration;
+- V2-M11-08 — PostgreSQL/rebuild/invariant hardening.
+
+### V2-M11-01 boundary
+
+The first slice introduces immutable IntegritySignal facts with:
+
+- Principal/optional AgentIdentity scope and database binding;
+- rule code + explicit rule version;
+- signal class;
+- structured evidence and metrics;
+- deterministic database evidence fingerprint and signal id;
+- explicit evidence observation window;
+- exact-replay idempotency;
+- append-only UPDATE/DELETE rejection.
+
+M11-01 deliberately introduces no trust score, no automatic block flag and no economic punishment. Rule-specific semantic validation and the I0–I4 action ladder remain later M11 slices.
+
+Tracking issue: #48.
+
+Version-scoped capability reputation remains separately blocked on Issue #44 until the protocol binds the execution AgentVersion rather than inferring it from mutable current state.

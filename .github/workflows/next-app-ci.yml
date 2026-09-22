@@ -114,6 +114,9 @@ jobs:
       - name: M10 PostgreSQL rebuild hardening
         run: node --test tests/v2-m10-reputation-rebuild-postgres.test.mjs
 
+      - name: M11 IntegritySignal foundation
+        run: node --test tests/v2-m11-integrity-signal-foundation.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
@@ -143,6 +146,9 @@ jobs:
 
       - name: M10 changed-code lint
         run: npm run lint:m10
+
+      - name: M11 changed-code lint
+        run: npm run lint:m11
 
       - name: Typecheck
         run: npm run typecheck
