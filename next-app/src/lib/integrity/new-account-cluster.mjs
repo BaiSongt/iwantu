@@ -186,11 +186,11 @@ async function newAccountClusterFacts(
   principalBId,
   principalCId,
 ) {
-  const rows = await prisma.$queryRaw(Prisma.sql\`
+  const rows = await prisma.$queryRaw(Prisma.sql`
     WITH principal_rows AS (
       SELECT "id", "createdAt"
       FROM "principals"
-      WHERE "id" IN (\${principalAId}, \${principalBId}, \${principalCId})
+      WHERE "id" IN (${principalAId}, ${principalBId}, ${principalCId})
     ),
     pair_evidence AS (
       SELECT
@@ -201,39 +201,39 @@ async function newAccountClusterFacts(
       WHERE "evidenceClass" = 'transaction'
         AND "subjectRole" = 'supplier'
         AND "subjectPrincipalId" IN (
-          \${principalAId}, \${principalBId}, \${principalCId}
+          ${principalAId}, ${principalBId}, ${principalCId}
         )
         AND "counterpartyPrincipalId" IN (
-          \${principalAId}, \${principalBId}, \${principalCId}
+          ${principalAId}, ${principalBId}, ${principalCId}
         )
         AND "subjectPrincipalId" <> "counterpartyPrincipalId"
     )
     SELECT
-      \${principalAId}::text AS "principalAId",
-      \${principalBId}::text AS "principalBId",
-      \${principalCId}::text AS "principalCId",
-      (SELECT "createdAt" FROM principal_rows WHERE "id" = \${principalAId})
+      ${principalAId}::text AS "principalAId",
+      ${principalBId}::text AS "principalBId",
+      ${principalCId}::text AS "principalCId",
+      (SELECT "createdAt" FROM principal_rows WHERE "id" = ${principalAId})
         AS "principalACreatedAt",
-      (SELECT "createdAt" FROM principal_rows WHERE "id" = \${principalBId})
+      (SELECT "createdAt" FROM principal_rows WHERE "id" = ${principalBId})
         AS "principalBCreatedAt",
-      (SELECT "createdAt" FROM principal_rows WHERE "id" = \${principalCId})
+      (SELECT "createdAt" FROM principal_rows WHERE "id" = ${principalCId})
         AS "principalCCreatedAt",
       count(*) FILTER (
-        WHERE p1 = LEAST(\${principalAId}, \${principalBId})
-          AND p2 = GREATEST(\${principalAId}, \${principalBId})
+        WHERE p1 = LEAST(${principalAId}, ${principalBId})
+          AND p2 = GREATEST(${principalAId}, ${principalBId})
       )::integer AS "abSettlementCount",
       count(*) FILTER (
-        WHERE p1 = LEAST(\${principalBId}, \${principalCId})
-          AND p2 = GREATEST(\${principalBId}, \${principalCId})
+        WHERE p1 = LEAST(${principalBId}, ${principalCId})
+          AND p2 = GREATEST(${principalBId}, ${principalCId})
       )::integer AS "bcSettlementCount",
       count(*) FILTER (
-        WHERE p1 = LEAST(\${principalCId}, \${principalAId})
-          AND p2 = GREATEST(\${principalCId}, \${principalAId})
+        WHERE p1 = LEAST(${principalCId}, ${principalAId})
+          AND p2 = GREATEST(${principalCId}, ${principalAId})
       )::integer AS "caSettlementCount",
       min("occurredAt") AS "basisStart",
       max("occurredAt") AS "basisEnd"
     FROM pair_evidence
-  \`);
+  `);
   return rows[0] ?? null;
 }
 
