@@ -123,6 +123,12 @@ jobs:
       - name: M11 R5 changed-code lint
         run: npx eslint src/lib/integrity/circular-flow.mjs tests/v2-m11-circular-flow.test.mjs
 
+      - name: M11 R6 new-account cluster
+        run: node --test tests/v2-m11-new-account-cluster.test.mjs
+
+      - name: M11 R6 changed-code lint
+        run: npx eslint src/lib/integrity/new-account-cluster.mjs tests/v2-m11-new-account-cluster.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
