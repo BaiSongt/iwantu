@@ -117,6 +117,12 @@ jobs:
       - name: M11 IntegritySignal foundation
         run: node --test tests/v2-m11-integrity-signal-foundation.test.mjs
 
+      - name: M11 R5 circular flow
+        run: node --test tests/v2-m11-circular-flow.test.mjs
+
+      - name: M11 R5 changed-code lint
+        run: npx eslint src/lib/integrity/circular-flow.mjs tests/v2-m11-circular-flow.test.mjs
+
       - name: M1 changed-code lint
         run: npm run lint:m1
 
