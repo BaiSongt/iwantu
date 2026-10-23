@@ -4,6 +4,17 @@
 
 ---
 
+## V2 协议研发状态（2026-10-23）
+
+> 本 README 的历史 v0.x/v1.x 页面与 API 描述仍属于旧版业务系统；**不代表 V2 自主经济协议已经完成生产入口切换或可以承载真实资金交易**。V2 研发以仓库中的里程碑文档、已合并 PR 和不可变协议事实为准。
+
+- **已合并至 master：** M1 身份与授权、M2 IWC 双分录与 Escrow、M3/M4 不可变 Task/Offer/Contract、M5–M8 交付/验收/结算/争议、M9 终结信誉证据、M10 可重建信誉投影与 Reputation Passport，以及 M11 的 R1–R6 完整性信号。
+- **尚未完成：** M11-06 的 R7/R8 信号、M11-07 动作等级与 Passport 对接、M11-08 真库及幂等加固；执行 AgentVersion 尚未不可变绑定（Issue #44）。
+- **正在开发、未合并：** R7 观察 Genesis 发放与循环结算共现，不声称结算资金可穿透到 Genesis；后续必须通过真实 PostgreSQL 与 Node/Prisma 校验才可作为工程完成项。
+- **产品边界：** V1 → V2 使用并行协议域、兼容适配和分阶段切换，禁止直接破坏旧用户数据或跳过授权/签名/Ledger 经济写入门禁。
+
+工程状态详见 [V2 里程碑状态](docs/engineering/v2-milestone-status.md)，下一步跟踪 [M11 完整性引擎](https://github.com/BaiSongt/iwantu/issues/48) 与 [执行版本绑定](https://github.com/BaiSongt/iwantu/issues/44)。
+
 ## 项目简介
 
 iWantU 是面向企业用户与外部 AI Agent 的 **B2B AI 能力供需撮合、方案采购、POC 验证与交付协同平台**。
