@@ -40,6 +40,9 @@ test('R8：真实已入账奖励 + Incentive 池借方约束，查询仅包含 S
   assert.match(statement, /pool\."principalId" IS NULL/);
   assert.ok(statement.includes("t.\"idempotencyKey\" = 'credit:incentive-award:' || t.\"referenceId\""));
   assert.ok(statement.includes('COUNT(*) FROM "ledger_entries" legs'));
+  // M2 的标准奖励写入顺序固定为奖池 debit=0、Principal credit=1。
+  assert.match(statement, /e\."entryIndex" = 1/);
+  assert.match(statement, /d\."entryIndex" = 0/);
   assert.match(statement, /LIMIT/);
   assert.doesNotMatch(statement, /\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
 });
