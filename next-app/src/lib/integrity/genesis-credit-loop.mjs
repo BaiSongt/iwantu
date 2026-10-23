@@ -6,7 +6,10 @@ import {
   emitIntegritySignal,
 } from './integrity-signal.mjs';
 import { classifyCircularFlow, CIRCULAR_FLOW_POLICY } from './circular-flow.mjs';
-import { readGenesisIssuanceFacts } from './genesis-issuance-facts.mjs';
+import {
+  GENESIS_ISSUANCE_PROVENANCE_VERSION,
+  readGenesisIssuanceFacts,
+} from './genesis-issuance-facts.mjs';
 
 export const GENESIS_CREDIT_LOOP_RULE_VERSION = 'iwantu.integrity-rule.r7/0.1';
 
@@ -138,6 +141,15 @@ export function classifyGenesisCreditLoop(facts, genesisIssuance, policy = GENES
       genesisIssuance.capitalLineageTraced !== false ||
       !Array.isArray(genesisIssuance.principals) || genesisIssuance.principals.length !== 3) {
     throw new IntegritySignalError('INTEGRITY_RULE_FACT_INVALID', 'R7 requires prior Genesis ledger facts without inferred capital lineage');
+  }
+  // 纯分类入口同样校验来源协议，避免把其他类型的 Credit 发放伪装为 Genesis。
+  const expectedLayers = ['ledger_transactions', 'ledger_entries', 'ledger_accounts'];
+  if (genesisIssuance.provenanceVersion !== GENESIS_ISSUANCE_PROVENANCE_VERSION ||
+      !Array.isArray(genesisIssuance.sourceFactLayer) ||
+      genesisIssuance.sourceFactLayer.length !== expectedLayers.length ||
+      expectedLayers.some((layer, index) => genesisIssuance.sourceFactLayer[index] !== layer)) {
+    throw new IntegritySignalError('INTEGRITY_RULE_FACT_INVALID',
+      'R7 requires canonical Genesis issuance source provenance');
   }
   const issuance = genesisIssuance.principals.map((row) => {
     const principalId = nonEmpty(row?.principalId, 'genesisPrincipalId');
