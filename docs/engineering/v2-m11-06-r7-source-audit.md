@@ -45,3 +45,33 @@ R7 开发分支 `feature/v2-m11-genesis-credit-loop` 已替换不存在的 `gene
 为了保证 R7 信号能够追溯到具体 Genesis 发行记录，在读取真实已 POSTED 的 Genesis `ledger_transactions` 时新增对 `transactionHash` 的确定性聚合及严格校验：要求 64 位 SHA-256 十六进制、小写、升序且无重复，并将其作为每个发放主体的历史依据放入 R7 `metrics.genesisIssuance`。这样同一主体的总发放额即使相等，具体发行凭证不同也不会被误认作同一组历史依据。此项只增强观察信号的可追溯性，**不**意味着实现资金穿透或自动处罚。
 
 新增假凭证、重复凭证、降序凭证和同额不同凭证测试。隔离 V8 转译与 Prisma 假对象执行的两套测试在本次增加的凭证校验前为 13/13 PASS；新增场景需继续复验。完整 Node 测试、Prisma 校验、PostgreSQL 真库、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。R7 暂不合并或认定为已验收。
+
+
+## 后续增量（2026-10-23 21:00，北京时间）
+
+新增独立 PostgreSQL 发行事实验收文件 `next-app/tests/v2-m11-genesis-issuance-postgres.test.mjs`，不借助 Prisma 假对象。该测试在**独立测试数据库**中通过真实 M2 `issueGenesisCredit`、`fundProtocolIncentivePool`、`awardProtocolIncentive` 与 `issuePurchasedCredit` 创建事实，再调用 R7 实际 `readGenesisIssuanceFacts` SQL，核查：
+
+- 严格时间边界：`postedAt < cutoff`，恰好等于截止时点的发行事实不应纳入。
+- Genesis 发行交易哈希、金额、次数一致；Purchased 与 Incentive 不得冒充 Genesis。
+- Principal 输入排列变化与重放后只读结果应一致；读取过程不得写 Ledger。
+- M2 Genesis 发行命令重复执行应保持幂等。
+- 测试环境安全防护：`DATABASE_URL` 对应数据库名称必须显式包含 `test` 标识，禁止对生产库执行测试写入；测试不包含重置/清库/删表逻辑。
+
+执行命令（只针对已独立创建并完成迁移的测试数据库）：
+
+```bash
+cd next-app
+# 示例：在终端安全配置 DATABASE_URL 指向独立 iwantu_test 数据库
+npm run prisma:validate
+npm run test:m11:postgres:r7
+npm run lint:m11
+npm run test:invariants
+npm run typecheck
+npm run build
+```
+
+与此同时，R7 纯分类入口新增对 `iwantu-credit-provenance/0.1` 和三层 Ledger 来源名称的 Fail-Closed 校验，防止误把其他 Credit 发行事实作为 Genesis 源输入。新增三个非规范来源回归用例。
+
+**本轮可确认：**从远端开发分支读取的实际 JavaScript 源码在 V8 隔离语法检查通过；纯分类逻辑 6/6 个针对性隔离测试通过。**NOT_RUN：**原生 Node 测试、独立 PostgreSQL E2E、Prisma Validate、ESLint、Typecheck、Build（当前运行环境无完整 npm 依赖与 PostgreSQL）；不能因此把 R7 标记为已验收，也不能假设 Gate 本身通过。新增的 PostgreSQL Gate 暂作为独立脚本，待真实运行验证后才接入强制 CI；未创建 PR、未触发收费 CI。
+
+剩余重点：真库执行上述 Gate 并检查 SQL 类型、时区、Ledger/信誉事实不可变；确认所有用例通过后，再准备 R7 Draft PR 与 M11-06 R8 激励观察规则。
