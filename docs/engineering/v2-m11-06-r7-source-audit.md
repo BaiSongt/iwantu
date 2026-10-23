@@ -75,3 +75,17 @@ npm run build
 **本轮可确认：**从远端开发分支读取的实际 JavaScript 源码在 V8 隔离语法检查通过；纯分类逻辑 6/6 个针对性隔离测试通过。**NOT_RUN：**原生 Node 测试、独立 PostgreSQL E2E、Prisma Validate、ESLint、Typecheck、Build（当前运行环境无完整 npm 依赖与 PostgreSQL）；不能因此把 R7 标记为已验收，也不能假设 Gate 本身通过。新增的 PostgreSQL Gate 暂作为独立脚本，待真实运行验证后才接入强制 CI；未创建 PR、未触发收费 CI。
 
 剩余重点：真库执行上述 Gate 并检查 SQL 类型、时区、Ledger/信誉事实不可变；确认所有用例通过后，再准备 R7 Draft PR 与 M11-06 R8 激励观察规则。
+
+
+## 23:00 双向来源绑定门禁（2026-10-23）
+
+对 M2 真实 `issueGenesisCredit` 与 `buildCreditProvenance` 的参数逐字段复核后，R7 的 Genesis 事实查询增加第二组独立一致性条件：
+
+- 发行事务 `ledger_transactions.metadata.creditSource` 必须是 `genesis`，`beneficiaryPrincipalId` 必须与入账的 Principal 相同。
+- 事务 `metadata.sourceReference` 必须等于事务本身的 `referenceId`。
+- 规范发行引用必须是 `principalId:allocationVersion`，并与入账分录 provenance 的 `allocationVersion` 一致。
+- 原有 `ledger_entries.provenance.schemaVersion/kind/sourceReferenceType/sourceReferenceId`、`postedAt`、`transactionHash`、币种与账户类型门禁继续保留。
+
+作用：防止**仅靠伪装分录 provenance** 将非规范事务计入 Genesis 发行事实。约束仅加强只读筛选；不修改已有 Ledger / ReputationEvidence / Trust，不追溯改写历史数据，不做 I0–I4 自动处罚。对应代码 `next-app/src/lib/integrity/genesis-issuance-facts.mjs`，SQL 形状断言位于 `next-app/tests/v2-m11-genesis-issuance-facts.test.mjs`。
+
+验证状态：已通过 GitHub 读取该分支最新 SHA `5b9c7a6c...` 及两个文件 blob，确认两处门禁落盘；**NOT_RUN**：原生 Node invariants、Prisma Validate、PostgreSQL 真库、ESLint、Typecheck、Build。SQL 逻辑仍必须由独立 `iwantu_test` 数据库实际运行 `npm run test:m11:postgres:r7` 验证。R7 保持开发中。
