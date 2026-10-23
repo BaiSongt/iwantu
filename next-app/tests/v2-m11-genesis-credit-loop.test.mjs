@@ -138,6 +138,24 @@ test('R7: 等额不同 Genesis 发行交易哈希不得合并为同一条证据'
   );
 });
 
+test('R7: 纯分类入口拒绝错误版本或伪造来源层，避免把其他 Credit 当作 Genesis', () => {
+  const wrongVersion = { ...issuance(), provenanceVersion: 'iwantu-credit-provenance/9.9' };
+  assert.throws(
+    () => classifyGenesisCreditLoop(facts(), wrongVersion),
+    /canonical Genesis issuance source provenance/,
+  );
+  const missingLayers = { ...issuance(), sourceFactLayer: undefined };
+  assert.throws(
+    () => classifyGenesisCreditLoop(facts(), missingLayers),
+    /canonical Genesis issuance source provenance/,
+  );
+  const incentiveLayers = { ...issuance(), sourceFactLayer: ['ledger_transactions', 'incentive_awards'] };
+  assert.throws(
+    () => classifyGenesisCreditLoop(facts(), incentiveLayers),
+    /canonical Genesis issuance source provenance/,
+  );
+});
+
 test('R7: 真实 Ledger 发放事实 + 供应方经济证据，逐主体写入可解释 IntegritySignal', async () => {
   const prisma = fakePrisma(facts());
   const result = await evaluateGenesisCreditLoop(prisma, {
