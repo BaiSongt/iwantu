@@ -146,7 +146,15 @@ export function classifyGenesisCreditLoop(facts, genesisIssuance, policy = GENES
     if ((issuanceCount === 0) !== (issuedAmount === 0n)) {
       throw new IntegritySignalError('INTEGRITY_RULE_FACT_INVALID', 'Genesis issuance count and amount disagree');
     }
-    return { principalId, issuanceCount, issuedAmount: amountText(issuedAmount) };
+    // 保留且校验每笔已 POSTED Genesis 的不可变哈希，避免同额不同源混同。
+    const transactionHashes = row.transactionHashes;
+    if (!Array.isArray(transactionHashes) || transactionHashes.length !== issuanceCount ||
+        transactionHashes.some((hash, index) => typeof hash !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(hash) ||
+          (index > 0 && transactionHashes[index - 1] >= hash))) {
+      throw new IntegritySignalError('INTEGRITY_RULE_FACT_INVALID', 'Genesis transaction hashes are invalid');
+    }
+    return { principalId, issuanceCount, issuedAmount: amountText(issuedAmount), transactionHashes: [...transactionHashes] };
   }).sort((a, b) => a.principalId < b.principalId ? -1 : a.principalId > b.principalId ? 1 : 0);
   if (issuance.some((row, index) => row.principalId !== circle.principalIds[index])) {
     throw new IntegritySignalError('INTEGRITY_RULE_FACT_INVALID', 'R7 issuance subjects must match the Settlement cycle');
