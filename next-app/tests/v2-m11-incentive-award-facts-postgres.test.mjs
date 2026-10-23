@@ -72,6 +72,12 @@ test('R8 真库：M2 奖励池入账事实可追溯、跨来源隔离、时间�
   assert.equal(second.status, 'posted');
   assert.match(first.transactionHash, /^[0-9a-f]{64}$/);
   assert.match(second.transactionHash, /^[0-9a-f]{64}$/);
+  for (const posted of [first, second]) {
+    const entries = await prisma.ledgerEntry.findMany({ where: { transactionId: posted.id } });
+    assert.equal(entries.length, 2, 'M2发奖应当恰好具有两条账本分录');
+    assert.deepEqual(entries.map((entry) => entry.side).sort(), ['credit', 'debit']);
+    assert.equal(posted.idempotencyKey, 'credit:incentive-award:' + posted.referenceId);
+  }
 
   // 其他来源同样已入账，但绝不能被读取为 Incentive Award。
   await issueGenesisCredit(prisma, {
@@ -95,6 +101,8 @@ test('R8 真库：M2 奖励池入账事实可追溯、跨来源隔离、时间�
   assert.equal(facts.factsVersion, INCENTIVE_AWARD_FACTS_VERSION);
   assert.equal(facts.automaticPunishmentApplied, false);
   assert.equal(facts.capitalLineageTraced, false);
+  assert.equal(facts.triggerEventAttribution, 'unavailable');
+  assert.equal(facts.r8RiskEvaluationEligible, false);
   assert.equal(facts.records.length, 2);
   assert.deepEqual(
     new Set(facts.records.map((record) => record.transactionHash)),
