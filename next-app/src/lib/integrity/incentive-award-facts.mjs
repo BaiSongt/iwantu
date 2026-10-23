@@ -83,6 +83,9 @@ export async function readIncentiveAwardFacts(prisma, input) {
       AND e."provenance" ->> 'awardId' = t."metadata" ->> 'awardId'
       AND t."metadata" ->> 'beneficiaryPrincipalId' = a."principalId"
       AND t."referenceId" = (t."metadata" ->> 'programId') || ':' || (t."metadata" ->> 'awardId')
+      AND t."idempotencyKey" = 'credit:incentive-award:' || t."referenceId"
+      -- M2标准发奖仅有一笔奖池借方、一笔受益主体贷方，不接受额外分录拼接的伪造奖励。
+      AND (SELECT COUNT(*) FROM "ledger_entries" legs WHERE legs."transactionId" = t."id") = 2
       AND EXISTS (
         SELECT 1 FROM "ledger_entries" d
         JOIN "ledger_accounts" pool ON pool."id" = d."accountId"
@@ -129,5 +132,8 @@ export async function readIncentiveAwardFacts(prisma, input) {
     records,
     automaticPunishmentApplied: false,
     capitalLineageTraced: false,
+    // M2奖励交易尚无不可变触发事件绑定，因此R8自动风险判定必须保持关闭。
+    triggerEventAttribution: 'unavailable',
+    r8RiskEvaluationEligible: false,
   };
 }
