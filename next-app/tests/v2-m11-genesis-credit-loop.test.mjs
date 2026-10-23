@@ -120,6 +120,24 @@ test('R7: 三方有向循环旋转不影响确定性证据，反向环保留不�
   assert.notDeepEqual(first.edges, backwards.edges);
 });
 
+test('R7: 等额不同 Genesis 发行交易哈希不得合并为同一条证据', () => {
+  const first = classifyGenesisCreditLoop(facts(), issuance());
+  const changedReceipt = issuance([
+    { principalId: 'a', issuanceCount: 1, issuedAmount: '80.00000000' },
+    { principalId: 'b', issuanceCount: 0, issuedAmount: '0.00000000' },
+    { principalId: 'c', issuanceCount: 0, issuedAmount: '0.00000000' },
+  ]);
+  changedReceipt.principals[0].transactionHashes = ['b'.repeat(64)];
+  const second = classifyGenesisCreditLoop(facts(), changedReceipt);
+  assert.equal(first.genesisIssuedAmount, second.genesisIssuedAmount);
+  assert.notDeepEqual(first.genesisIssuance, second.genesisIssuance);
+  changedReceipt.principals[0].transactionHashes = ['invalid-hash'];
+  assert.throws(
+    () => classifyGenesisCreditLoop(facts(), changedReceipt),
+    /transaction hashes are invalid/,
+  );
+});
+
 test('R7: 真实 Ledger 发放事实 + 供应方经济证据，逐主体写入可解释 IntegritySignal', async () => {
   const prisma = fakePrisma(facts());
   const result = await evaluateGenesisCreditLoop(prisma, {
