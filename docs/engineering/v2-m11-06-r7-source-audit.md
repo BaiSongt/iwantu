@@ -4,7 +4,7 @@
 
 ## 本轮审查结论
 
-**当前 R7 开发分支不能作为已实现能力合并。** R7 的 SQL 从 `reputation_evidence.evidence` 读取 `genesisOriginAmount`，但 `20260919161000_v2_m9_terminal_reputation_evidence/migration.sql` 中的 `iwantu_build_terminal_reputation_evidence` 只写入货币、结算总额、收款额、LedgerTransactionId、SettlementHash 等经济事实，没有 `genesisOriginAmount`。当前 R7 将不存在的字段 COALESCE 为 0，因此真实数据库即使发生循环交易，也会因 Genesis 比例永远为零而不产生 R7 信号。现有测试只向伪造的 queryRaw 结果注入该字段，无法覆盖真实 PostgreSQL 事实来源。
+**历史缺陷：最初的 R7 分支不能作为已实现能力合并。** R7 的 SQL 从 `reputation_evidence.evidence` 读取 `genesisOriginAmount`，但 `20260919161000_v2_m9_terminal_reputation_evidence/migration.sql` 中的 `iwantu_build_terminal_reputation_evidence` 只写入货币、结算总额、收款额、LedgerTransactionId、SettlementHash 等经济事实，没有 `genesisOriginAmount`。当前 R7 将不存在的字段 COALESCE 为 0，因此真实数据库即使发生循环交易，也会因 Genesis 比例永远为零而不产生 R7 信号。现有测试只向伪造的 queryRaw 结果注入该字段，无法覆盖真实 PostgreSQL 事实来源。
 
 ## 已核对的真实事实边界
 
@@ -34,6 +34,8 @@
 - R8 INCENTIVE_FARMING 必须从 `ledger_transactions(type=incentive, status=posted)`、`ledger_entries.provenance(kind=incentive)` 的 award/program/受益主体事实出发，结合 M9 的独立 Principal 结算证据做版本化、可解释统计；重复合法奖励不能仅凭频次判定作弊。
 - Issue #44：Contract/Delivery/Settlement 尚未绑定执行 `AgentVersion`。版本级信誉必须先在签名经济承诺或 Delivery 边界保存不可变版本身份及哈希，并延伸至终局 ReputationEvidence，不得推断当前激活版本即历史执行版本。
 
-## 分支状态
+## 分支状态（2026-10-23 20:00，北京时间）
 
-现有分支含未提交 PR 的 R7 实现和伪造数据库结果的单元测试。本审查发现阻断缺陷，因此在修复真实来源并完成验证前，不创建可合并 PR、不触发付费 CI，不宣称 R7 已完成。下一开发切片先修复 R7 数据提取与对应测试，再补真库验证。
+R7 开发分支 `feature/v2-m11-genesis-credit-loop` 已替换不存在的 `genesisOriginAmount` 提取路径，改为在循环中第一笔终局结算证据之前查询真实的已 POSTED Genesis 发行事实；闭环阈值沿用 R5，发行事实不再冒充资金穿透证明。加入循环旋转稳定性、无 Genesis/仅 Incentive/后发 Genesis、伪造发行结果、无写入副作用等测试，并将 R7 文件接入 `test:invariants` 与 `lint:m11`。
+
+仅完成了隔离 JavaScript/V8 测试桩验证（13/13）；依赖完整 npm/Prisma/PostgreSQL 环境的原生 Node、迁移真库、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。因此 R7 为 **开发中、未合并**，不得描述为已完成、数据库验收通过或已证明 Settlement 的 Genesis 资金来源。不创建可合并 PR，不触发付费 CI。下一轮需要真实 PostgreSQL E2E、资金事实时间门禁与数据库级重放检查。
