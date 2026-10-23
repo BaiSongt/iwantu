@@ -58,3 +58,20 @@
 - R7 `feature/v2-m11-genesis-credit-loop`：Genesis 来源校验属于独立切片，真库验收未完成，不挪用其结果作为 R8 的归因证明。
 - Issue #44：执行 AgentVersion 必须绑定到有签名的经济证据；该方案不将当前 AgentVersion 推断为历史执行版本。
 - README/里程碑：保持“协议基础已进展但产品未上线”的区分。未经过 PR 评审与完整门禁不得写成 R8 COMPLETE。
+
+
+## 六、R8-P1a 候选政策修订结构与确定性哈希（2026-10-24）
+
+本切片新增 `next-app/src/lib/integrity/incentive-program-policy-draft.mjs` 与 `next-app/tests/v2-m11-incentive-program-policy-draft.test.mjs`，版本标签 `iwantu.incentive-program-policy/0.1`。它只做**候选政策快照的输入规范化与哈希**，没有持久化政策、核验发布者身份、验证任何签名或执行奖励经济写入。
+
+候选结构精确限定为 `programId`、`policyVersion`、`issuerPrincipalId`、`triggerType=terminal_settlement`、显式且不重复的 `eligibleSettlementTypes`、`beneficiaryRole=buyer|supplier`、`awardSlot`、`rewardFormula={kind:fixed_amount,amountIwc}`、`effectiveFrom/effectiveUntil` 及 `deduplicationScope=program_policy_settlement_role_slot`。当前只定义 **定额 IWC** 候选公式，其他计奖方式须单独版本化设计，不能作为现有已支持能力。时间区间采用前闭后开的建议语义，未来消费侧还需验证真实 Settlement 的时点、角色和预算。
+
+拒绝未知字段、对象原型污染、含冒号的歧义标识、重复终局类型、非规范 UTC 时间、非法金额或非 Decimal(36,8) 字符串、零额度及时间倒置。支持字段与可枚举终局类型重排后生成同一 SHA-256；修改身份、结算类型、角色、金额、奖励槽位或有效期均改变摘要。黄金向量：
+
+`63566eaefba6f45cc822e32c200f25852b6e31fa2e5362ed4ee09da52dfb03f3`
+
+关键边界：`issuerPrincipalId` 是**候选字段**，不是已验证的政策发布治理主体；`policyHash` 是候选内容摘要，不是签名证明、数据库不可变事实、M1 AuthoritySnapshot 或发奖许可。尚未批准 `incentive.policy.publish` 等具体 Mandate action/capability，也没有建立程序治理 Principal、政策版本全局唯一性、重叠生效窗口禁止或跨版本重复奖励约束。这些必须在 P1b / B2 中由签名授权与 PostgreSQL 事实证明，不能靠本纯函数验证替代。
+
+**验证事实：** Node.js v22.16.0 直接执行 P1a 单测 **7/7 PASS**，两个 .mjs `node --check` **PASS**；GitHub blob SHA 与运行的本地两文件完全一致；新测试已接入 `test:invariants` 和 `lint:m11`，独立命令为 `npm run test:m11:r8-p1a`。完整仓库 invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均 **NOT_RUN**；不可将上述局部测试算作完整工程验收。
+
+**下一独立切片 P1b：** 审查现行 M1/M3 签名经济命令与授权验证机制，设计政策发布与发奖两个相互区分的签名命令摘要、nonce/有效期、Principal/Agent 身份及 AuthoritySnapshot 证据绑定；先固定可审计的签名边界，再讨论 B2 的不可变数据库收据与 B3 原子发奖。老 Ledger 不回填、不改写，R8 `r8RiskEvaluationEligible` 仍必须为 `false`。
