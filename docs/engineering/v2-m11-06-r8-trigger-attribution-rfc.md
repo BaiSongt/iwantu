@@ -87,3 +87,13 @@ R8 检测前需先验证触发收据、Policy 快照、终局 Settlement、交�
 Issue #44 的执行 AgentVersion 绑定需要在经济签名/交付证据链独立解决；R8 触发收据不能从当前 AgentVersion 状态推断历史执行者。M11-07 的动作等级只能先做可解释投影及 Passport 展示，任何冻结/限权都需要独立安全、授权与申诉门禁。Legacy V1→V2 兼容适配应在这些底层协议契约稳定后分阶段上线。
 
 **本 RFC 当前仅供审查，不代表实现、测试通过、合并或实际处罚授权。**
+
+## 7. R8-B1 实施记录（2026-10-24）
+
+本分支新增纯函数候选收据模块 next-app/src/lib/integrity/incentive-trigger-binding-draft.mjs 和对应 Node 单元测试。采用 iwantu.incentive-trigger-binding/0.1 协议标签；规范化并检查账本交易 ID/哈希、ProgramPolicy 版本/哈希、受益 Principal、Decimal(36,8) IWC 金额、终局 Settlement ID/哈希、触发证据摘要、授权引用与 UTC 创建时间；对完整的规范化 JSON 计算 SHA-256 候选收据摘要。键顺序重排不改变哈希，篡改数值与绑定主体会改变哈希或拒绝输入。新协议 programId/awardId 禁止冒号等分隔符歧义，但不改写历史 M2 奖励。
+
+**重要边界：** policy_authorization_reference 只是未验证的授权引用。B1 的结构检查和哈希计算不能证明政策获准、Settlement 存在、授权有效或奖励与触发事件存在真实关联。B1 不使用 Prisma、不写入 Ledger 或 PostgreSQL，也不产生 R8 Signal、信任评分或 I0–I4 处罚。B2/B3 必须再由数据库不可变事实复核这些绑定条件、原子性与重放幂等；本模块的候选 receiptHash 不得当作已认证经济事实。
+
+**独立验收：** 已在隔离目录使用 Node.js v22.16.0 对与 GitHub blob SHA 一致的模块/测试文件运行原生 node --test，结果 7/7 PASS；两个文件 node --check PASS。B1 已接入 test:invariants 和 lint:m11，单独入口 npm run test:m11:r8-b1。完整仓库 invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 为 NOT_RUN，不能据纯函数用例声称全链路已通过。B2 数据库迁移只允许增加新结构，不删除用户数据、不覆盖历史账本。
+
+本 RFC 整体状态依旧为 PROPOSED。B1 是尚未评审合并的候选协议切片，不代表 R8 已能够识别激励套利。
