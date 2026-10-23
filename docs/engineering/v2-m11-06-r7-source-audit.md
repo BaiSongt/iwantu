@@ -39,3 +39,9 @@
 R7 开发分支 `feature/v2-m11-genesis-credit-loop` 已替换不存在的 `genesisOriginAmount` 提取路径，改为在循环中第一笔终局结算证据之前查询真实的已 POSTED Genesis 发行事实；闭环阈值沿用 R5，发行事实不再冒充资金穿透证明。加入循环旋转稳定性、无 Genesis/仅 Incentive/后发 Genesis、伪造发行结果、无写入副作用等测试，并将 R7 文件接入 `test:invariants` 与 `lint:m11`。
 
 仅完成了隔离 JavaScript/V8 测试桩验证（13/13）；依赖完整 npm/Prisma/PostgreSQL 环境的原生 Node、迁移真库、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。因此 R7 为 **开发中、未合并**，不得描述为已完成、数据库验收通过或已证明 Settlement 的 Genesis 资金来源。不创建可合并 PR，不触发付费 CI。下一轮需要真实 PostgreSQL E2E、资金事实时间门禁与数据库级重放检查。
+
+## 后续增量（2026-10-23 20:56，北京时间）
+
+为了保证 R7 信号能够追溯到具体 Genesis 发行记录，在读取真实已 POSTED 的 Genesis `ledger_transactions` 时新增对 `transactionHash` 的确定性聚合及严格校验：要求 64 位 SHA-256 十六进制、小写、升序且无重复，并将其作为每个发放主体的历史依据放入 R7 `metrics.genesisIssuance`。这样同一主体的总发放额即使相等，具体发行凭证不同也不会被误认作同一组历史依据。此项只增强观察信号的可追溯性，**不**意味着实现资金穿透或自动处罚。
+
+新增假凭证、重复凭证、降序凭证和同额不同凭证测试。隔离 V8 转译与 Prisma 假对象执行的两套测试在本次增加的凭证校验前为 13/13 PASS；新增场景需继续复验。完整 Node 测试、Prisma 校验、PostgreSQL 真库、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。R7 暂不合并或认定为已验收。
