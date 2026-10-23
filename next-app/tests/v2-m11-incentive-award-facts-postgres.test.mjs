@@ -76,6 +76,9 @@ test('R8 真库：M2 奖励池入账事实可追溯、跨来源隔离、时间�
     const entries = await prisma.ledgerEntry.findMany({ where: { transactionId: posted.id } });
     assert.equal(entries.length, 2, 'M2发奖应当恰好具有两条账本分录');
     assert.deepEqual(entries.map((entry) => entry.side).sort(), ['credit', 'debit']);
+    const orderedEntries = [...entries].sort((left, right) => left.entryIndex - right.entryIndex);
+    assert.deepEqual(orderedEntries.map(({ entryIndex, side }) => [entryIndex, side]),
+      [[0, 'debit'], [1, 'credit']], 'M2奖励分录序号必须符合协议顺序');
     assert.equal(posted.idempotencyKey, 'credit:incentive-award:' + posted.referenceId);
   }
 
