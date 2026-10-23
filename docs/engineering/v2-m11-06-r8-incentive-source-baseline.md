@@ -21,3 +21,15 @@ R8 `INCENTIVE_FARMING` 首期不直接下舞弊结论。M2 的 `awardProtocolInc
 - 变更不可宣称已实现 R8 检测或资金穿透，不创建处罚动作；原生 Node + Prisma + PostgreSQL + lint + build 未全部执行前标记 `NOT_RUN`，不得以模拟测试冒充端到端通过。
 
 关联：Issue #48（M11），Issue #44（AgentVersion 不可变绑定独立议题）。
+
+## R8 PostgreSQL 独立验收入口（2026-10-24）
+
+新增 `next-app/tests/v2-m11-incentive-award-facts-postgres.test.mjs`，直接调用 M2 的 `fundProtocolIncentivePool`、`awardProtocolIncentive`、`issueGenesisCredit`、`issuePurchasedCredit` 和 R8 只读查询，不依赖 mock Prisma。真库验证覆盖：奖励池借方、受益 Principal、已入账交易哈希、跨来源隔离、半开时间窗口、稳定重放、查询只读、查询上限拒绝与原始发奖命令幂等。测试只创建全新测试主体和账本事实，不执行 `DELETE`、`TRUNCATE`、`DROP` 或清库命令。
+
+本测试为**显式选择运行的独立 Gate**，暂不加入 `test:invariants` 和 `next-app-ci`，防止未配置的 CI 或生产环境意外执行写入测试。脚本必须同时满足：`DATABASE_URL` 使用本机 PostgreSQL，数据库名称严格为 `iwantu_test`，并设置 `IWANTU_R8_POSTGRES_TEST=iwantu_test`；否则拒绝连接。执行方式：
+
+    cd next-app && IWANTU_R8_POSTGRES_TEST=iwantu_test npm run test:m11:postgres:r8
+
+先在专门创建的测试数据库完成 `npm ci`、`npm run prisma:generate` 和 `npm run prisma:migrate:deploy`；这些命令绝不能指向生产数据库。仓库原有 Docker/CI 测试环境可供参考，但这次没有自行启动或修改任何数据库。
+
+**验收状态：NOT_RUN。** 当前尚未取得具备真实 Prisma Client 和 PostgreSQL 的本地 exact-HEAD 执行报告；仅创建了验收用例及其命令入口。不能因测试文件存在就宣称 R8 已通过真库、已具备完整信号判定或能够归因某个 Settlement。`awardProtocolIncentive` 当前没有不可变的奖励触发事件关联，R8 继续保持证据只读与风险判定关闭，待协议来源边界冻结后再实现规则。
