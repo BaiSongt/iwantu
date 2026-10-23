@@ -41,3 +41,9 @@ R8 `INCENTIVE_FARMING` 首期不直接下舞弊结论。M2 的 `awardProtocolInc
 返回的事实集合新增 `triggerEventAttribution='unavailable'`、`r8RiskEvaluationEligible=false`：M2 目前未将奖励与不可变触发事件绑定，读取到合法奖励不等于证明其由某次 Settlement 触发，不生成 R8 风险判决或自动经济处罚。对未来新增的触发绑定应制定独立的有版本协议与兼容性策略，不追溯伪造旧记录。
 
 已运行使用实际修改源码、Prisma SQL 标签轻量替身的 V8 隔离测试，共 **5/5 PASS**；原生 Node invariants、Prisma Validate、PostgreSQL E2E、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。新增真库验收断言尚待在独立 `iwantu_test` 库执行，不能据此宣称真库通过。
+
+## 2026-10-24｜R8 触发归因方案与凭证结构加固
+
+已新增 [`R8 激励触发归因协议 RFC v0.1`](./v2-m11-06-r8-trigger-attribution-rfc.md)，明确选择前瞻式不可变奖励→终局 Settlement 绑定收据、保留旧奖励 `attribution_unavailable`、政策快照哈希及独立阶段门禁。**RFC 状态仍为 PROPOSED，尚未实现发奖触发绑定或 R8 风险规则。**
+
+为与 M2 `awardProtocolIncentive()` 的实际双分录顺序一致，只读标准奖励查询进一步要求奖池 debit 的 `entryIndex=0`、受益 Principal credit 的 `entryIndex=1`；新增 SQL 形状断言与 PostgreSQL 测试断言，不修改任何 Ledger 写入路径。使用远端实际源码与 Prisma 标签轻量替身的 V8 隔离执行 **11/11 PASS**；Node invariants、Prisma Validate、PostgreSQL E2E、ESLint、Typecheck 与 Build 均为 **NOT_RUN**，不能声明 R8 已验收。
