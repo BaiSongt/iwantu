@@ -24,6 +24,8 @@ test('R8：真实已入账奖励 + Incentive 池借方约束，查询仅包含 S
   assert.equal(result.factsVersion, INCENTIVE_AWARD_FACTS_VERSION);
   assert.equal(result.automaticPunishmentApplied, false);
   assert.equal(result.capitalLineageTraced, false);
+  assert.equal(result.triggerEventAttribution, 'unavailable');
+  assert.equal(result.r8RiskEvaluationEligible, false);
   assert.equal(result.records.length, 1);
   assert.deepEqual(result.principalIds, ['a', 'b']);
   const statement = sql(client.calls[0]);
@@ -36,6 +38,8 @@ test('R8：真实已入账奖励 + Incentive 池借方约束，查询仅包含 S
   assert.match(statement, /e\."provenance" ->> 'awardId' = t\."metadata" ->> 'awardId'/);
   assert.match(statement, /pool\."type" = 'system_incentive'/);
   assert.match(statement, /pool\."principalId" IS NULL/);
+  assert.ok(statement.includes("t.\"idempotencyKey\" = 'credit:incentive-award:' || t.\"referenceId\""));
+  assert.ok(statement.includes('COUNT(*) FROM "ledger_entries" legs'));
   assert.match(statement, /LIMIT/);
   assert.doesNotMatch(statement, /\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
 });
@@ -82,4 +86,6 @@ test('R8：激励事实只读，不将频次、集中度或结算金额写为舞
   assert.equal('ruleCode' in result, false);
   assert.equal('signals' in result, false);
   assert.equal('integrityVerdict' in result, false);
+  assert.equal(result.triggerEventAttribution, 'unavailable');
+  assert.equal(result.r8RiskEvaluationEligible, false);
 });
