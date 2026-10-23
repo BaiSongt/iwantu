@@ -7,6 +7,9 @@ import {
 } from '../src/lib/integrity/genesis-issuance-facts.mjs';
 
 const BEFORE = new Date('2026-09-24T00:00:00.000Z');
+const HASH_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const HASH_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const HASH_C = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 
 function fakePrisma(rows) {
   const queries = [];
@@ -24,7 +27,7 @@ function sqlText(query) {
 }
 
 test('R7 issuance facts: only canonical posted Genesis ledger rows are queried', async () => {
-  const prisma = fakePrisma([{ principalId: 'p2', issuanceCount: 1, issuedAmount: '60.00000000' }]);
+  const prisma = fakePrisma([{ principalId: 'p2', issuanceCount: 1, issuedAmount: '60.00000000', transactionHashes: [HASH_B] }]);
   const result = await readGenesisIssuanceFacts(prisma, {
     principalIds: ['p3', 'p2', 'p1'], before: BEFORE,
   });
@@ -38,6 +41,7 @@ test('R7 issuance facts: only canonical posted Genesis ledger rows are queried',
   assert.match(sql, /t\."referenceType" = 'principal_genesis_allocation'/);
   assert.match(sql, /t\."postedAt" < CAST/);
   assert.match(sql, /t\."transactionHash" IS NOT NULL/);
+  assert.match(sql, /array_agg\(t\."transactionHash" ORDER BY t\."transactionHash"\)/);
   assert.match(sql, /e\."side" = 'credit'/);
   assert.match(sql, /a\."type" = 'principal_available'/);
   assert.match(sql, /a\."currency" = 'IWC'/);
@@ -47,16 +51,16 @@ test('R7 issuance facts: only canonical posted Genesis ledger rows are queried',
   assert.equal(result.provenanceVersion, GENESIS_ISSUANCE_PROVENANCE_VERSION);
   assert.equal(result.capitalLineageTraced, false);
   assert.deepEqual(result.principals, [
-    { principalId: 'p1', issuanceCount: 0, issuedAmount: '0.00000000' },
-    { principalId: 'p2', issuanceCount: 1, issuedAmount: '60.00000000' },
-    { principalId: 'p3', issuanceCount: 0, issuedAmount: '0.00000000' },
+    { principalId: 'p1', issuanceCount: 0, issuedAmount: '0.00000000', transactionHashes: [] },
+    { principalId: 'p2', issuanceCount: 1, issuedAmount: '60.00000000', transactionHashes: [HASH_B] },
+    { principalId: 'p3', issuanceCount: 0, issuedAmount: '0.00000000', transactionHashes: [] },
   ]);
 });
 
 test('R7 issuance facts: caller order does not affect Principal ordering', async () => {
   const rows = [
-    { principalId: 'a', issuanceCount: 2, issuedAmount: '15.00000000' },
-    { principalId: 'c', issuanceCount: 1, issuedAmount: '30.00000000' },
+    { principalId: 'a', issuanceCount: 2, issuedAmount: '15.00000000', transactionHashes: [HASH_A, HASH_B] },
+    { principalId: 'c', issuanceCount: 1, issuedAmount: '30.00000000', transactionHashes: [HASH_C] },
   ];
   const one = await readGenesisIssuanceFacts(fakePrisma(rows), {
     principalIds: ['c', 'a', 'b'], before: BEFORE,
@@ -89,6 +93,10 @@ test('R7 issuance facts: forged, duplicate or inconsistent query rows are reject
     [{ principalId: 'a', issuanceCount: 0, issuedAmount: '1.00000000' }],
     [{ principalId: 'a', issuanceCount: 1, issuedAmount: '-5.00000000' }],
     [{ principalId: 'a', issuanceCount: 1, issuedAmount: '0.00000000' }],
+    [{ principalId: 'a', issuanceCount: 1, issuedAmount: '1.00000000', transactionHashes: [] }],
+    [{ principalId: 'a', issuanceCount: 1, issuedAmount: '1.00000000', transactionHashes: ['not-a-hash'] }],
+    [{ principalId: 'a', issuanceCount: 2, issuedAmount: '2.00000000', transactionHashes: [HASH_A, HASH_A] }],
+    [{ principalId: 'a', issuanceCount: 2, issuedAmount: '2.00000000', transactionHashes: [HASH_B, HASH_A] }],
   ]) {
     await assert.rejects(() => readGenesisIssuanceFacts(fakePrisma(rows), input));
   }
