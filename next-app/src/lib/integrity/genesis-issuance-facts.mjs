@@ -30,7 +30,8 @@ export async function readGenesisIssuanceFacts(prisma, input) {
   const rows = await prisma.$queryRaw(Prisma.sql`
     SELECT a."principalId",
       count(*)::integer AS "issuanceCount",
-      COALESCE(sum(e."amount"), 0)::text AS "issuedAmount"
+      COALESCE(sum(e."amount"), 0)::text AS "issuedAmount",
+      array_agg(t."transactionHash" ORDER BY t."transactionHash") AS "transactionHashes"
     FROM "ledger_entries" e
     JOIN "ledger_transactions" t ON t."id" = e."transactionId"
     JOIN "ledger_accounts" a ON a."id" = e."accountId"
@@ -64,7 +65,18 @@ export async function readGenesisIssuanceFacts(prisma, input) {
     if (!/^\d+(?:\.\d{1,8})?$/.test(amount) || /^0+(?:\.0+)?$/.test(amount)) {
       throw new IntegritySignalError('INTEGRITY_GENESIS_FACT_INVALID', 'Invalid Genesis issued amount');
     }
-    byPrincipal.set(row.principalId, { principalId: row.principalId, issuanceCount: row.issuanceCount, issuedAmount: amount });
+    // 绑定已入账交易哈希，避免仅凭相同合计数额复用无法追溯的发行证据。
+    const transactionHashes = row.transactionHashes;
+    if (!Array.isArray(transactionHashes) || transactionHashes.length !== row.issuanceCount ||
+        transactionHashes.some((hash, index) => typeof hash !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(hash) ||
+          (index > 0 && transactionHashes[index - 1] >= hash))) {
+      throw new IntegritySignalError('INTEGRITY_GENESIS_FACT_INVALID', 'Genesis transaction hashes are invalid or not canonical');
+    }
+    byPrincipal.set(row.principalId, {
+      principalId: row.principalId, issuanceCount: row.issuanceCount,
+      issuedAmount: amount, transactionHashes: [...transactionHashes],
+    });
   }
   return {
     sourceFactLayer: ['ledger_transactions', 'ledger_entries', 'ledger_accounts'],
@@ -72,7 +84,7 @@ export async function readGenesisIssuanceFacts(prisma, input) {
     capitalLineageTraced: false,
     before,
     principals: principalIds.map((id) => byPrincipal.get(id) ?? {
-      principalId: id, issuanceCount: 0, issuedAmount: '0.00000000',
+      principalId: id, issuanceCount: 0, issuedAmount: '0.00000000', transactionHashes: [],
     }),
   };
 }
