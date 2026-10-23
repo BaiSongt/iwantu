@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-21
+Updated: 2026-10-23（按仓库内可核对的 PR 和未合并开发分支修订）
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -412,16 +412,18 @@ Goal:
 
 M11 consumes immutable protocol/economic facts and M10 projections. It must not rewrite ReputationEvidence and must not use AI judgment as the first implementation.
 
-Work sequence:
+Work sequence (verified against merged PRs; an open branch is not a merged milestone):
 
-- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **IN IMPLEMENTATION**;
-- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING;
-- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION;
-- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW;
-- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER;
-- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING;
-- V2-M11-07 — I0–I4 action-ladder projection + Reputation Passport integration;
-- V2-M11-08 — PostgreSQL/rebuild/invariant hardening.
+- V2-M11-01 — immutable IntegritySignal — **COMPLETE** (PR #49, merged);
+- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING — **COMPLETE** (PR #50, merged);
+- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION — **COMPLETE** (PR #51, merged);
+- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW — **COMPLETE** (PR #52, merged);
+- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER — **COMPLETE** (PR #53/#54, merged);
+- V2-M11-06 — R7 GENESIS_CREDIT_LOOP — **IN DEVELOPMENT**, branch `feature/v2-m11-genesis-credit-loop`; R8 INCENTIVE_FARMING — **NOT STARTED**;
+- V2-M11-07 — I0–I4 non-punitive action-ladder projection + Reputation Passport — **NOT STARTED**;
+- V2-M11-08 — PostgreSQL/rebuild/invariant hardening — **NOT STARTED**.
+
+R7 implementation note (2026-10-23): The initial branch incorrectly inferred Genesis provenance from an absent `ReputationEvidence.evidence.genesisOriginAmount` field. It has been replaced on the **unmerged** R7 branch with the real posted Genesis LedgerTransaction/LedgerEntry provenance reader and R5-equivalent circular settlement thresholds. The R7 signal observes only that a Genesis recipient participated in a cycle; `capitalLineageTraced=false` explicitly denies tracing the origin of settled IWC. The R7 files are now included in `test:invariants` and `lint:m11`; actual Node/PostgreSQL/Prisma CI acceptance on the new exact branch HEAD remains **NOT_RUN** in this development environment. Isolated mocked JavaScript checks do not replace database verification.
 
 ### V2-M11-01 boundary
 
