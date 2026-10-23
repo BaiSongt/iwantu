@@ -36,9 +36,11 @@ test('R7 issuance facts: only canonical posted Genesis ledger rows are queried',
   assert.match(sql, /t\."type" = 'genesis'/);
   assert.match(sql, /t\."status" = 'posted'/);
   assert.match(sql, /t\."referenceType" = 'principal_genesis_allocation'/);
-  assert.match(sql, /t\."postedAt" <= CAST/);
+  assert.match(sql, /t\."postedAt" < CAST/);
+  assert.match(sql, /t\."transactionHash" IS NOT NULL/);
   assert.match(sql, /e\."side" = 'credit'/);
   assert.match(sql, /a\."type" = 'principal_available'/);
+  assert.match(sql, /a\."currency" = 'IWC'/);
   assert.match(sql, /e\."provenance" ->> 'beneficiaryPrincipalId' = a\."principalId"/);
   assert.doesNotMatch(sql, /genesisOriginAmount/);
 
