@@ -33,3 +33,11 @@ R8 `INCENTIVE_FARMING` 首期不直接下舞弊结论。M2 的 `awardProtocolInc
 先在专门创建的测试数据库完成 `npm ci`、`npm run prisma:generate` 和 `npm run prisma:migrate:deploy`；这些命令绝不能指向生产数据库。仓库原有 Docker/CI 测试环境可供参考，但这次没有自行启动或修改任何数据库。
 
 **验收状态：NOT_RUN。** 当前尚未取得具备真实 Prisma Client 和 PostgreSQL 的本地 exact-HEAD 执行报告；仅创建了验收用例及其命令入口。不能因测试文件存在就宣称 R8 已通过真库、已具备完整信号判定或能够归因某个 Settlement。`awardProtocolIncentive` 当前没有不可变的奖励触发事件关联，R8 继续保持证据只读与风险判定关闭，待协议来源边界冻结后再实现规则。
+
+## 2026-10-24 R8 标准双分录及触发归因门禁
+
+本轮收紧 R8 的奖励事实读取：除原有已入账交易、奖励池借方、受益主体贷方、币种、金额、Provenance 和交易哈希一致性检查外，还要求交易幂等键严格匹配现行 M2 `credit:incentive-award:<referenceId>` 格式，并且每笔标准奖励恰好有两条 LedgerEntry。额外分录拼接的非规范交易不作为标准奖励事实；这是证据筛选规则，不是对用户交易的修改。
+
+返回的事实集合新增 `triggerEventAttribution='unavailable'`、`r8RiskEvaluationEligible=false`：M2 目前未将奖励与不可变触发事件绑定，读取到合法奖励不等于证明其由某次 Settlement 触发，不生成 R8 风险判决或自动经济处罚。对未来新增的触发绑定应制定独立的有版本协议与兼容性策略，不追溯伪造旧记录。
+
+已运行使用实际修改源码、Prisma SQL 标签轻量替身的 V8 隔离测试，共 **5/5 PASS**；原生 Node invariants、Prisma Validate、PostgreSQL E2E、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。新增真库验收断言尚待在独立 `iwantu_test` 库执行，不能据此宣称真库通过。
