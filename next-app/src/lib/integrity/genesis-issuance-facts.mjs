@@ -50,6 +50,11 @@ export async function readGenesisIssuanceFacts(prisma, input) {
       AND e."provenance" ->> 'beneficiaryPrincipalId' = a."principalId"
       AND e."provenance" ->> 'sourceReferenceType' = t."referenceType"
       AND e."provenance" ->> 'sourceReferenceId' = t."referenceId"
+      -- M2 Genesis 的双方凭证必须相互绑定：发行事务元数据、主体及分配版本一致。
+      AND t."metadata" ->> 'creditSource' = 'genesis'
+      AND t."metadata" ->> 'beneficiaryPrincipalId' = a."principalId"
+      AND t."metadata" ->> 'sourceReference' = t."referenceId"
+      AND t."referenceId" = a."principalId" || ':' || (e."provenance" ->> 'allocationVersion')
     GROUP BY a."principalId"
     ORDER BY a."principalId"
   `);
