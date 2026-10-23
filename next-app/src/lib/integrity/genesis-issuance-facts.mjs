@@ -37,12 +37,15 @@ export async function readGenesisIssuanceFacts(prisma, input) {
     WHERE t."type" = 'genesis'
       AND t."status" = 'posted'
       AND t."referenceType" = 'principal_genesis_allocation'
-      AND t."postedAt" <= CAST(${before} AS timestamp(3))
+      AND t."transactionHash" IS NOT NULL
+      AND t."postedAt" < CAST(${before} AS timestamp(3))
       AND e."side" = 'credit'
       AND a."type" = 'principal_available'
+      AND a."currency" = 'IWC'
       AND a."principalId" IN (${Prisma.join(principalIds)})
       AND e."provenance" ->> 'schemaVersion' = ${GENESIS_ISSUANCE_PROVENANCE_VERSION}
       AND e."provenance" ->> 'kind' = 'genesis'
+      AND NULLIF(e."provenance" ->> 'allocationVersion', '') IS NOT NULL
       AND e."provenance" ->> 'beneficiaryPrincipalId' = a."principalId"
       AND e."provenance" ->> 'sourceReferenceType' = t."referenceType"
       AND e."provenance" ->> 'sourceReferenceId' = t."referenceId"
