@@ -71,6 +71,7 @@ export async function readIncentiveAwardFacts(prisma, input) {
       AND t."postedAt" >= CAST(${windowStart} AS timestamp(3))
       AND t."postedAt" < CAST(${windowEnd} AS timestamp(3))
       AND e."side" = 'credit'
+      AND e."entryIndex" = 1
       AND a."type" = 'principal_available'
       AND a."currency" = 'IWC'
       AND a."principalId" IN (${Prisma.join(principalIds)})
@@ -91,6 +92,7 @@ export async function readIncentiveAwardFacts(prisma, input) {
         JOIN "ledger_accounts" pool ON pool."id" = d."accountId"
         WHERE d."transactionId" = t."id"
           AND d."side" = 'debit'
+          AND d."entryIndex" = 0
           AND d."amount" = e."amount"
           AND pool."type" = 'system_incentive'
           AND pool."currency" = 'IWC'
