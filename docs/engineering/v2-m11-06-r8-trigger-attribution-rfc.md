@@ -97,3 +97,15 @@ Issue #44 的执行 AgentVersion 绑定需要在经济签名/交付证据链独�
 **独立验收：** 已在隔离目录使用 Node.js v22.16.0 对与 GitHub blob SHA 一致的模块/测试文件运行原生 node --test，结果 7/7 PASS；两个文件 node --check PASS。B1 已接入 test:invariants 和 lint:m11，单独入口 npm run test:m11:r8-b1。完整仓库 invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 为 NOT_RUN，不能据纯函数用例声称全链路已通过。B2 数据库迁移只允许增加新结构，不删除用户数据、不覆盖历史账本。
 
 本 RFC 整体状态依旧为 PROPOSED。B1 是尚未评审合并的候选协议切片，不代表 R8 已能够识别激励套利。
+
+## 8. R8-B2 前置数据库事实核对（2026-10-24）
+
+本分支新增 `next-app/src/lib/integrity/incentive-trigger-source-inspection.mjs`，在 **B1 候选收据结构/哈希核验通过后**，使用参数化 Prisma `$queryRaw` 只读对照现有 SQL 表 `ledger_transactions`、`ledger_entries`、`ledger_accounts` 和 `settlements`。门禁要求：奖励交易为 POSTED、类型/规范幂等键/哈希/受益主体相符，恰好两条分录且分别为 `system_incentive` 借方和 `principal_available` 贷方、金额及 M2 Incentive Provenance 一致；Settlement 必须为终局类型（FULL_SETTLEMENT / FULL_REFUND / MUTUAL_SPLIT），哈希匹配且形成时间不晚于奖励入账时间。查询未返回唯一、完整、一致的结果时 Fail-Closed。
+
+**这只是 B2 的只读预检切片，不是 B2 数据库收据持久化或 B3 原子发奖的完成证明。** B1 收据中的 `programPolicyHash`、`triggerEvidenceHash` 和 `authorityEvidence` 目前仍由候选输入提供，数据库尚无对应的经核验、被冻结的激励政策/授权收据绑定。因此即便账本/结算匹配，返回值仍固定 `attributionStatus='unavailable'`、`policyAuthorizationVerified=false`、`bindingReceiptPersisted=false`、`r8RiskEvaluationEligible=false`，绝不据此生成 R8 风险信号或经济处罚。收据不能回填旧交易，也不能凭时间邻近关系认定奖励由 Settlement 触发。
+
+实际项目的 M4–M11 多个协议表由 SQL 迁移直接建表，`schema.prisma` 尚未将 `settlements` 声明为 Prisma model；本切片复用已有 SQL 事实而未引入不存在的 Prisma Settlement model，不添加数据库迁移、生产写入或新的账本并发路径。
+
+新增 `next-app/tests/v2-m11-incentive-trigger-source-inspection.test.mjs` 五组独立 Node 用例，覆盖只读参数绑定、标准双分录与时间门禁的查询形状、伪造/重复/不完整结果拒绝、候选篡改和政策未核验状态，已接入 `test:invariants` 与 `lint:m11`；独立入口 `npm run test:m11:r8-b2-preflight`。**Node 单元测试 5/5 PASS（远端 blob SHA 与本地验收文件一致）；真正 PostgreSQL 执行、Prisma Validate、完整 invariants、ESLint、Typecheck、Build 均 NOT_RUN。** 模拟查询不能证明 SQL 真库兼容性或数据库触发器安全性。
+
+接下来必须先冻结 ProgramPolicy/AuthorizationReceipt 的真实不可变来源与版本/哈希验证方案，再评审 B2 收据表的外键、禁止更新/删除触发器和数据库独立重算门禁；之后用独立 `iwantu_test` PostgreSQL 执行正反例、并发与回滚 E2E，最后才进入 B3 的原子发奖能力。
