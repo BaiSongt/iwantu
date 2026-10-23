@@ -11,6 +11,7 @@ import {
 
 const START = new Date('2026-09-20T00:00:00.000Z');
 const END = new Date('2026-09-24T00:00:00.000Z');
+const GENESIS_HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 function facts(overrides = {}) {
   return {
@@ -32,7 +33,9 @@ function issuance(principals = [
     provenanceVersion: 'iwantu-credit-provenance/0.1',
     capitalLineageTraced: false,
     before: START,
-    principals,
+    principals: principals.map((row) => ({ ...row,
+      transactionHashes: row.issuanceCount > 0 ? [GENESIS_HASH] : [],
+    })),
   };
 }
 
@@ -41,7 +44,7 @@ function sqlText(query) {
 }
 
 function fakePrisma(cycle, postedGenesis = [
-  { principalId: 'a', issuanceCount: 1, issuedAmount: '80.00000000' },
+  { principalId: 'a', issuanceCount: 1, issuedAmount: '80.00000000', transactionHashes: [GENESIS_HASH] },
 ]) {
   const calls = [];
   return {
@@ -78,6 +81,7 @@ test('R7: Genesis 发行在先且三方真实结算形成定向闭环时，仅�
   assert.equal(result.grossAmount, '120.00000000');
   assert.equal(result.genesisPrincipalCount, 1);
   assert.equal(result.genesisIssuedAmount, '80.00000000');
+  assert.deepEqual(result.genesisIssuance[0].transactionHashes, [GENESIS_HASH]);
   assert.equal(result.capitalLineageTraced, false);
   assert.equal(result.relationshipType, 'genesis_recipient_in_circular_settlement_flow');
   assert.deepEqual(result.principalIds, ['a', 'b', 'c']);
@@ -144,6 +148,7 @@ test('R7: 真实 Ledger 发放事实 + 供应方经济证据，逐主体写入�
   assert.match(evidence.interpretation, /observation_only/);
   assert.equal(metrics.genesisPrincipalCount, 1);
   assert.equal(metrics.genesisIssuedAmount, '80.00000000');
+  assert.deepEqual(metrics.genesisIssuance[0].transactionHashes, [GENESIS_HASH]);
   assert.equal(metrics.automaticPunishmentApplied, false);
   assert.equal(metrics.capitalLineageTraced, false);
 });
