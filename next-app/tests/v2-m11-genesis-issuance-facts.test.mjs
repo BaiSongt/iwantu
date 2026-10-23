@@ -46,6 +46,11 @@ test('R7 issuance facts: only canonical posted Genesis ledger rows are queried',
   assert.match(sql, /a\."type" = 'principal_available'/);
   assert.match(sql, /a\."currency" = 'IWC'/);
   assert.match(sql, /e\."provenance" ->> 'beneficiaryPrincipalId' = a\."principalId"/);
+  // 只有 M2 规范的 Genesis 发行事务与 credit 分录双方凭证完全匹配才计入。
+  assert.match(sql, /t\."metadata" ->> 'creditSource' = 'genesis'/);
+  assert.match(sql, /t\."metadata" ->> 'beneficiaryPrincipalId' = a\."principalId"/);
+  assert.match(sql, /t\."metadata" ->> 'sourceReference' = t\."referenceId"/);
+  assert.match(sql, /t\."referenceId" = a\."principalId" \|\| ':' \|\| \(e\."provenance" ->> 'allocationVersion'\)/);
   assert.doesNotMatch(sql, /genesisOriginAmount/);
 
   assert.equal(result.provenanceVersion, GENESIS_ISSUANCE_PROVENANCE_VERSION);
