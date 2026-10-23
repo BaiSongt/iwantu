@@ -48,6 +48,7 @@ export async function inspectIncentiveTriggerSourceFacts(prisma, draft) {
       AND t."metadata" ->> 'beneficiaryPrincipalId' = ${evidence.beneficiaryPrincipalId}
       AND t."postedAt" IS NOT NULL
       AND s."settlementHash" = ${evidence.settlementHash}
+      AND s."type" IN ('full_settlement', 'full_refund', 'mutual_split')
       AND s."createdAt" <= t."postedAt"
       AND e."side" = 'credit' AND d."side" = 'debit'
       AND e."amount" = d."amount"
