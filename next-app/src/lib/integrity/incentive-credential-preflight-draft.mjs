@@ -8,7 +8,7 @@ export const INCENTIVE_CREDENTIAL_PREFLIGHT_DRAFT_VERSION = 'iwantu.incentive-cr
 
 export class IncentiveCredentialPreflightDraftError extends Error {
   constructor(field, reason) {
-    super(\`\${field}: \${reason}\`);
+    super(`${field}: ${reason}`);
     this.name = 'IncentiveCredentialPreflightDraftError';
     this.code = 'INCENTIVE_CREDENTIAL_PREFLIGHT_DRAFT_INVALID';
     this.field = field;
