@@ -1,7 +1,7 @@
-// R8-P1k 只读历史激励支出覆盖预检：同时扫描 POSTED 激励类型、奖池借方和伪装的激励来源。
+// R8-P1l 只读历史激励覆盖：扫描 POSTED 奖励、奖池借方、Credit provenance 及显式来源元数据。
 // 不依赖 R8 的 500 条观察样本，亦不把可归类账本事实等同于治理、签名或预算授权。
 export const INCENTIVE_POSTED_BUDGET_COVERAGE_DRAFT_VERSION =
-  'iwantu.incentive-posted-budget-coverage/0.2';
+  'iwantu.incentive-posted-budget-coverage/0.3';
 
 export class IncentivePostedBudgetCoverageDraftError extends Error {
   constructor(field, reason) {
@@ -120,6 +120,8 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
       ) p
       WHERE t."status" = 'posted'
         AND (t."type" = 'incentive' OR t."referenceType" = 'protocol_incentive_award'
+          -- 元数据自称激励来源却未使用标准奖励分录，也必须进入未分类审计。
+          OR t."metadata" ->> 'creditSource' = 'incentive'
           OR p."poolDebitCount" > 0 OR p."incentiveProvenanceCreditCount" > 0)
     ), classified AS (
       SELECT c.*,
