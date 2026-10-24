@@ -48,3 +48,11 @@
 5. **边界**：该用例尚未证明并发可重复读、批量性能、授权预算或治理凭据；未来需增加完整 R7 真库负例、R8 跨政策版本权益唯一性、签名 Nonce 及原子经济写入专项门禁。不得把回滚事务的结构测试视为发奖授权测试。
 
 本轮**仅对新测试文件进行了 Node v22.16.0 的 `node --check` 静态语法检查（PASS）**，并回读 GitHub 远端文件。当前环境未安装完整仓库、Prisma/ESLint 依赖及 PostgreSQL 服务；`test:m11:postgres:r8-coverage` **NOT_RUN**，完整 invariants、Prisma Validate、ESLint、Typecheck、Build 同为 **NOT_RUN**。因此 P1i/P1j **不得标记真库验收 PASS**。
+
+## 6. R8-P1k：修复非 Incentive 交易伪造奖励来源的扫描缺口（2026-10-24）
+
+针对 P1i `/0.1`，代码评审确认原 SQL 仅纳入 `type=incentive` 或 `system_incentive` 借方交易。假如某笔其他类型的 POSTED LedgerTransaction 直接从非奖池账户贷记用户，并在贷方 `provenance.kind` 中声称 `incentive`，或者使用 `protocol_incentive_award` 来源标识，它会被整笔排除，不进入 Fail-Closed 审计。此类伪装虽然不一定消耗真实奖池，但会混淆系统对已记账激励信用及其来源的解释。
+
+本轮将只读审计协议明确升级为 `iwantu.incentive-posted-budget-coverage/0.2`：除原有两类候选外，扫描任意 `referenceType=protocol_incentive_award`，或存在贷方 `provenance.kind=incentive` / `provenance.sourceReferenceType=protocol_incentive_award` 的 POSTED 交易。对于全部候选仍要求 `type=incentive`、标准双分录、可信受益贷方及唯一声明的奖励来源；不符合要求的非 Incentive 交易必须计入未分类数量并拒绝聚合结果。保留历史 P1i v0.1 的版本语义，不改写既有 Ledger、Credit provenance 或任何已入账金额。
+
+新增原生 Node 回归断言覆盖 SQL 候选扩展和未分类拒绝；**该测试只验证 SQL 结构与模拟返回值，不能证明 PostgreSQL 真实查询执行成功**。P1j 真库用例尚未运行，也尚未增加伪造 provenance 的真实回滚样本。完整 `test:invariants`、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 在当前环境仍为 **NOT_RUN**。无 Program 注册治理、签名政策、Nonce、原子发奖或 R8 风险裁决的新能力；返回值仍永久保持 `economicWritePermitted=false` 与 `r8RiskEvaluationEligible=false`。
