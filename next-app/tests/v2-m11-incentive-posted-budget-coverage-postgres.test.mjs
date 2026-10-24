@@ -219,9 +219,9 @@ test('R8-P1k 真库：非激励交易伪造 Incentive Credit 来源必须完整�
     '回滚后不得保留伪造来源的经济记录');
 });
 
-test('R8-P1j 真库：奖池异常借方及仅来源类型伪造均拒绝覆盖', async () => {
+test('R8-P1j/P1l 真库：奖池异常借方、来源类型及元数据激励伪造均拒绝覆盖', async () => {
   // 每个负例使用单独回滚事务，避免前一异常掩盖另一条检测条件。
-  for (const scenario of ['pool_debit_without_award', 'forged_source_type_only']) {
+  for (const scenario of ['pool_debit_without_award', 'forged_source_type_only', 'metadata_incentive_origin_only']) {
     const programId = unique('r8-p1j-' + scenario);
     const idempotencyKey = unique('credit:r8-p1j-' + scenario);
     const rollback = new Error('R8_P1J_NEGATIVE_ROLLBACK_ONLY');
@@ -255,7 +255,7 @@ test('R8-P1j 真库：奖池异常借方及仅来源类型伪造均拒绝覆盖'
             ],
           });
           debitAccountId = system.system_incentive.id;
-        } else {
+        } else if (scenario === 'forged_source_type_only') {
           // kind=earned，但仅 sourceReferenceType 冒充协议奖励来源。
           provenance = buildCreditProvenance({
             kind: 'earned', beneficiaryPrincipalId: principal.id,
@@ -268,7 +268,12 @@ test('R8-P1j 真库：奖池异常借方及仅来源类型伪造均拒绝覆盖'
         await postLedgerTransactionInTransaction(tx, {
           type: 'reserve', referenceType: 'r8_audit_negative_' + scenario,
           referenceId: unique('r8-p1j-negative'), idempotencyKey,
-          metadata: { creditSource: 'r8_audit_negative_test', details: null },
+          // 第三负例不造假 Credit provenance，仅通过 metadata.creditSource 冒充发奖。
+          metadata: {
+            creditSource: scenario === 'metadata_incentive_origin_only'
+              ? 'incentive' : 'r8_audit_negative_test',
+            details: null,
+          },
           entries: [
             { accountId: debitAccountId, side: 'debit', amount: '0.00000001' },
             { accountId: accounts.principal_available.id, side: 'credit',
