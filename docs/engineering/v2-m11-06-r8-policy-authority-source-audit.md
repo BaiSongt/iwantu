@@ -129,3 +129,23 @@ Node.js v22.16.0 原生单测 **7/7 PASS**，代码/测试 `node --check` **PASS
 使用 Node.js v22.16.0 对与远端 Git Blob SHA 一致的 P1c 源码、测试及精确重建的 P1a/P1b/M1 依赖运行原生测试 **8/8 PASS**；两个新文件 `node --check` **PASS**。已将独立命令 `npm run test:m11:r8-p1c` 接入 `test:invariants` 与 `lint:m11`。**完整** Node invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均为 **NOT_RUN**，不借用以前 master 的 CI 成功作为此次通过证明。
 
 后续必须先在独立设计评审中确定 Program 的治理 Principal 和签名动作权限，再把 M3 经过验证的服务端访问凭据/签名凭据/实时 `resolveAuthority` / `captureAuthoritySnapshot` 复用到新收据写入路径；为新命令领域建立 PostgreSQL 唯一 Nonce 与冻结政策版本的审计约束。授权校验应发生于**经济写入之前**，且遵守现行 Ledger 原子提交/锁序与失败整体回滚。未完成这些条件前，R8-B2/B3/B4 均不可判定完成。
+
+
+## 九、R8-P1d：存储签名凭据与认证身份的只读交叉预检（2026-10-24）
+
+本切片新增 `next-app/src/lib/integrity/incentive-credential-preflight-draft.mjs` 与配套负例测试。版本 `iwantu.incentive-credential-preflight/0.1`。**它只接受服务端已经认证的 V2 Agent 访问上下文和 Prisma 读取适配器，不能把普通客户端传入的对象当作已认证上下文。**
+
+### P1d 已实现的有限能力
+
+- 对 `Principal`、`AgentIdentity`、访问 `AgentCredential` 和签名 `AgentCredential` 做当前数据库只读查验（四项 `findUnique`），拒绝状态失效、跨 Principal 所有权、Agent 不匹配、访问/签名凭据类别混用及无效时间窗口。
+- 要求签名命令的 `principalId` 与 `agentIdentityId` 对应已经存在的 V2 访问身份；签名凭据必须绑定该 AgentIdentity，算法为 EdDSA。
+- 不接受外部 `presentedPublicKeyJwk`；将从数据库签名凭据查得的 `publicKeyJwk` 交给此前 P1c 候选 Ed25519 验签函数，分别支持政策发布和奖励发放意图。
+- 返回 `accessCredentialId`、`signingCredentialId`、`economicCommandHash` 和 `intentPayloadHash`，明确保持 `authorizationStatus=not_checked`、`nonceReplayStatus=not_checked`、`policyGovernanceStatus=not_checked`、`immutableReceiptStatus=not_written`、`r8RiskEvaluationEligible=false`。
+
+**绝对不可将此预检结果用于真实发奖、发布政策或产生风险处罚。** `tx` 和 `authentication` 是可信服务端调用的先决输入，本函数不校验 Bearer Token 本身；其记录一致性不能代替 M1/M3 的实时 `resolveAuthority`、`bindAuthorityToAuthentication`、`captureAuthoritySnapshot`，也不检查 Mandate 动作权限、Program 治理资格、历史 AgentVersion、签名命令 Nonce 消费、冻结政策、终局 Settlement 或奖励池资金。
+
+### P1d 验证证据与仍存缺口
+
+已对新增两个 .mjs 运行 Node.js v22.16.0 语法检查。隔离执行新测试 **8/8 PASS（P1c 依赖使用本地测试替身，执行了真实 Node Ed25519 数学验签）**；该结果仅证明 P1d 的数据库读取适配逻辑在模拟依赖下行为符合预期，**不能标作真实 P1c 全链路测试或 PostgreSQL E2E PASS**。正式仓库测试文件引用真实 P1c，需在安装齐全依赖的工作环境运行 `npm run test:m11:r8-p1d`；已加入 `test:invariants` / `lint:m11`。完整 invariants、实际 P1c 联动、Prisma Validate、ESLint、Typecheck/Build、PostgreSQL E2E 均 **NOT_RUN**。
+
+下一切片 P1e 须在不复制 M3 安全逻辑的前提下复用实时 Authority Resolver，先**评审并冻结** `incentive.policy.publish` / `incentive.award.issue` 的治理 Principal、Mandate action/capability 和奖励金额限额，再为该领域设计不可变、唯一 Nonce 及签名授权收据。B2 数据库持久化、B3 原子发奖、B4 R8 非处罚性规则均尚未完成；Issue #44 的执行 AgentVersion 不得从当前凭据或当前 AgentVersion 推断。
