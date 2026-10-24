@@ -75,3 +75,35 @@
 **验证事实：** Node.js v22.16.0 直接执行 P1a 单测 **7/7 PASS**，两个 .mjs `node --check` **PASS**；GitHub blob SHA 与运行的本地两文件完全一致；新测试已接入 `test:invariants` 和 `lint:m11`，独立命令为 `npm run test:m11:r8-p1a`。完整仓库 invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均 **NOT_RUN**；不可将上述局部测试算作完整工程验收。
 
 **下一独立切片 P1b：** 审查现行 M1/M3 签名经济命令与授权验证机制，设计政策发布与发奖两个相互区分的签名命令摘要、nonce/有效期、Principal/Agent 身份及 AuthoritySnapshot 证据绑定；先固定可审计的签名边界，再讨论 B2 的不可变数据库收据与 B3 原子发奖。老 Ledger 不回填、不改写，R8 `r8RiskEvaluationEligible` 仍必须为 `false`。
+
+
+## 七、R8-P1b 待签名业务意图与授权边界（2026-10-24）
+
+本切片新增 `incentive-authorization-intent-draft.mjs` 及对应 Node 测试，协议候选版本 `iwantu.incentive-authorization-intent/0.1`。**实现范围仅限只读候选载荷/规范摘要**，未签名、未授权、未消费 Nonce、未落库、未调用 `awardProtocolIncentive`。不更改 M2 旧幂等键或历史奖励记录，也不推断 Issue #44 所缺失的执行 AgentVersion。
+
+### P1b-1：两个不同的拟议动作
+
+| 待签动作（均待治理评审） | payloadHash 覆盖的事实 | 后续必须独立核验 |
+| --- | --- | --- |
+| `incentive.policy.publish` | `programId`、`policyVersion`、`policyHash`、`issuerPrincipalId` | 发布者属于受信治理 Principal，签名/实时 Mandate 允许发布该 Program 的政策修订，版本和有效期在 PostgreSQL 唯一且无冲突 |
+| `incentive.award.issue` | 精确政策身份及哈希、指定 Settlement ID/hash/终局类型/触发证据哈希、受益 Principal/角色、awardId/槽位、**政策固定金额**和 IWC 币种 | 当前执行者有发奖权限，Settlement 是终局真实事实，角色与实际受益 Principal 匹配，真实金额/时间/可用奖池和冻结政策一致 |
+
+两个拟议 action **尚未成为正式 Mandate 权限定义**。发布政策的治理主体不应被自动视为发奖主体，反之亦然；两者必须分别完成权限评审。
+
+### P1b-2：与 M1/M3 现成签名链的接口
+
+调用方将 P1b 输出的 `payloadHash` 作为现有 M3 `buildEconomicCommandEvidence` 的 `payloadHash`，用现有 `iwantu-economic-command/0.1` 封装 action、已认证 Principal/AgentIdentity、指定 Mandate、Nonce、issuedAt/expiresAt、signingKeyId 与 EdDSA 算法后，对 `hashEconomicCommandEvidence` 签名。不能把候选载荷哈希当成已签名或已授权的收据。
+
+后续的**真实数据库写入路径**须复用 M3 已有的访问凭据与独立签名凭据校验、EdDSA 公钥验签、实时 `resolveAuthority`、`bindAuthorityToAuthentication`、`captureAuthoritySnapshot`；10 分钟最大 TTL、时钟偏差和过期拒绝遵从 M3 已实施边界。须在同一数据库事务内保存唯一 Nonce、命令签名、公钥凭据引用、签发时授权快照和冻结政策；历史 AuthoritySnapshot 只用于证明已经发生的历史核验，不能重新授权新交易。**现有 OfferRevision Nonce 唯一索引不等于激励命令 Nonce 的重放保护**，必须为新领域建立单独约束。
+
+### P1b-3：去重冲突与归因失败闭合
+
+候选 `deduplicationFingerprint` 只包含 `programId + policyVersion + policyHash + settlementId + beneficiaryRole + awardSlot` 的规范哈希，**刻意不包含** awardId 和 beneficiaryPrincipalId。这样同一政策/结算/角色/槽位更换奖项编号或受益人仍可在未来唯一约束中冲突；同一指纹而不同 payloadHash 必须拒绝，不得按首次命令偷偷改收款主体。是否允许跨政策版本、不同 Program 多次奖励必须由治理政策明确，不凭本候选指纹断言舞弊。
+
+目前结算类型、ID、Hash、受益主体均为**调用者候选输入**：纯函数只做格式、静态政策枚举与摘要验证，**没有查询终局 Settlement、ReputationEvidence、Ledger、AgentVersion 或历史授权**。在 PostgreSQL 完成这些事实核验前，`r8RiskEvaluationEligible=false`、`attributionStatus=unavailable` 的既有 B2 预检结论不变。不得生成 R8 风险信号、I0–I4 经济处罚或已认证的归因收据。
+
+### P1b-4：本切片验证与下一阶段验收
+
+Node.js v22.16.0 原生单测 **7/7 PASS**，代码/测试 `node --check` **PASS**；本地测试依赖的 P1a 与 M1 AuthoritySnapshot 源文件均经 Git Blob SHA 核对与远端完全一致。新增独立命令 `npm run test:m11:r8-p1b`，接入 `test:invariants` 与 `lint:m11`。完整 Node invariants、Prisma Validate、ESLint、Typecheck/Build、PostgreSQL E2E 仍为 **NOT_RUN**，不能用本切片的单测代替。
+
+下一步应先评审治理 Principal 与发奖 Mandate action/capability，冻结签名命令及收据字段；之后以 **B2 PostgreSQL 不可变存储/签名证据门禁** → **B3 真实授权下原子发奖** → **B4 可解释、非处罚性风险观察** 的顺序推进。R7 真库验收独立处理。
