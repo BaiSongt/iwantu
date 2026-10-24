@@ -154,3 +154,67 @@ test('R8-P1j 真库：全历史支出、跨 Program 隔离、幂等与异常归�
   assert.equal(await prisma.ledgerTransaction.count({ where: { idempotencyKey: fixtureKey } }), 0,
     '回滚后不得留存测试经济事实');
 });
+
+
+test('R8-P1k 真库：非激励交易伪造 Incentive Credit 来源必须完整扫描并拒绝', async () => {
+  const programId = unique('r8-p1k-forged-program');
+  const sourceReferenceId = unique('r8-p1k-forged-award');
+  const idempotencyKey = unique('credit:r8-p1k-forged-provenance');
+  const rollback = new Error('R8_P1K_ROLLBACK_ONLY');
+  let exercised = false;
+
+  await assert.rejects(
+    prisma.$transaction(async (tx) => {
+      const baseline = await inspectPostedIncentiveBudgetCoverageDraft(tx, { programId });
+      assert.equal(baseline.programPostedSpendIwc, '0.00000000');
+
+      const organization = await tx.organization.create({
+        data: { name: unique('R8 P1k rollback org'), type: 'buyer' },
+      });
+      const principal = await tx.principal.create({
+        data: { type: 'organization', organizationId: organization.id },
+      });
+      const accounts = await ensurePrincipalLedgerAccounts(tx, principal.id);
+      const system = await ensureSystemLedgerAccounts(tx);
+
+      // 故意使用普通 reserve 交易和 Reserve 借方，不能让伪造的来源冒充真实 Incentive 发奖。
+      // 当前 M2 只负责通用双分录入账，R8 候选审计必须独立拒绝此类 Credit provenance。
+      await postLedgerTransactionInTransaction(tx, {
+        type: 'reserve',
+        referenceType: 'r8_audit_forged_source',
+        referenceId: sourceReferenceId,
+        idempotencyKey,
+        metadata: { creditSource: 'r8_audit_forged_source', details: null },
+        entries: [
+          { accountId: system.system_reserve.id, side: 'debit', amount: '0.00000001' },
+          {
+            accountId: accounts.principal_available.id,
+            side: 'credit',
+            amount: '0.00000001',
+            provenance: buildCreditProvenance({
+              kind: 'incentive',
+              beneficiaryPrincipalId: principal.id,
+              sourceReferenceType: 'protocol_incentive_award',
+              sourceReferenceId,
+              programId,
+              awardId: 'forged-credit',
+            }),
+          },
+        ],
+      });
+
+      await assert.rejects(
+        () => inspectPostedIncentiveBudgetCoverageDraft(tx, { programId }),
+        (error) => error instanceof IncentivePostedBudgetCoverageDraftError &&
+          error.field === 'unclassifiedCandidateCount',
+      );
+      exercised = true;
+      throw rollback;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 60_000 }),
+    (error) => error === rollback,
+  );
+
+  assert.equal(exercised, true, '伪造来源拒绝断言必须在回滚前完成');
+  assert.equal(await prisma.ledgerTransaction.count({ where: { idempotencyKey } }), 0,
+    '回滚后不得保留伪造来源的经济记录');
+});
