@@ -26,6 +26,7 @@ const reject = async (db, input = {programId: 'program-1'}) => {
 test('P1i：空历史全量账本返回零金额，不将结果提升为预算授权', async () => {
   const result = await inspect(mock().db, {programId: 'program-1'});
   assert.equal(result.programPostedSpendIwc, '0.00000000');
+  assert.equal(result.protocol, 'iwantu.incentive-posted-budget-coverage/0.2');
   assert.equal(result.allPoolDebitIwc, '0.00000000');
   assert.equal(result.auditStatus, 'no_unclassified_posted_candidates_in_query_snapshot');
   assert.equal(result.budgetAuthorityStatus, 'not_checked');
@@ -46,7 +47,7 @@ test('P1i：跨奖励和 Program 的真实 posted 金额以精确字符串返回
   assert.equal(result.recognizedAwardCount, '3');
 });
 
-test('P1i：SQL 核对全部 POSTED 激励和奖池借方，不采用观察窗、用户过滤、LIMIT', async () => {
+test('P1k：SQL 全量覆盖 POSTED 激励、奖池借方及伪造来源，不采用观察窗、用户过滤、LIMIT', async () => {
   const {db, calls} = mock();
   await inspect(db, {programId: 'program-1'});
   assert.equal(calls.length, 1);
@@ -56,7 +57,10 @@ test('P1i：SQL 核对全部 POSTED 激励和奖池借方，不采用观察窗�
   assert.match(sql, /FROM "ledger_entries" e/);
   assert.match(sql, /a\."type" = 'system_incentive'/);
   assert.match(sql, /t\."status" = 'posted'/);
-  assert.match(sql, /t\."type" = 'incentive' OR p\."poolDebitCount" > 0/);
+  assert.match(sql, /t\."type" = 'incentive' OR t\."referenceType" = 'protocol_incentive_award'/);
+  assert.match(sql, /p\."poolDebitCount" > 0 OR p\."incentiveProvenanceCreditCount" > 0/);
+  assert.match(sql, /e\."provenance" ->> 'kind' = 'incentive'/);
+  assert.match(sql, /e\."provenance" ->> 'sourceReferenceType' = 'protocol_incentive_award'/);
   assert.match(sql, /COUNT\(\*\) FILTER \(WHERE NOT COALESCE\("recognized", FALSE\)\)/);
   assert.match(sql, /WHERE "recognized" AND "programId" = \?/);
   for (const forbidden of [/\bLIMIT\b/i, /\bOFFSET\b/i, /\bINSERT\b/i, /\bUPDATE\b/i, /\bDELETE\b/i, /windowStart/, /principalIds/]) {
@@ -72,6 +76,7 @@ test('P1i：SQL 逐笔检查 M2 双分录、provenance、哈希和 idempotency',
   assert.match(sql, /"entryCount" = 2/);
   assert.match(sql, /"poolDebitCount" = 1 AND c\."poolValidCount" = 1/);
   assert.match(sql, /"matchedCreditCount" = 1/);
+  assert.match(sql, /"incentiveProvenanceCreditCount" = 1/);
   assert.match(sql, /"matchedCreditAmount" = c\."poolDebitAmount"/);
   assert.match(sql, /"idempotencyKey" = 'credit:incentive-award:' \|\| c\."referenceId"/);
   assert.match(sql, /"transactionHash" ~ '\^\[0-9a-f\]\{64\}\$'/);
@@ -87,6 +92,19 @@ test('P1i：历史激励归属缺失、奖池异常转出或其他未分类交�
       allPoolDebitIwc: '100.00000000', programPostedSpendIwc: '0',
     }).db);
   }
+});
+
+test('P1k：伪造激励来源但未借记 Incentive 奖池的非激励交易必须 Fail-Closed', async () => {
+  const {db, calls} = mock({
+    postedCandidateCount: '1', recognizedAwardCount: '0', unclassifiedCandidateCount: '1',
+    allPoolDebitIwc: '0', programPostedSpendIwc: '0',
+  });
+  await assert.rejects(() => inspect(db, {programId: 'program-1'}),
+    (error) => error instanceof BudgetError && error.field === 'unclassifiedCandidateCount');
+  const sql = calls[0].sql;
+  assert.match(sql, /t\."referenceType" = 'protocol_incentive_award'/);
+  assert.match(sql, /p\."incentiveProvenanceCreditCount" > 0/);
+  assert.match(sql, /c\."incentiveProvenanceCreditCount" = 1/);
 });
 
 test('P1i：拒绝行数错误、缺失结果和伪造计数', async () => {
