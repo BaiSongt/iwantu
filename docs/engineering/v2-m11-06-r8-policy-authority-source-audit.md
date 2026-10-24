@@ -107,3 +107,25 @@
 Node.js v22.16.0 原生单测 **7/7 PASS**，代码/测试 `node --check` **PASS**；本地测试依赖的 P1a 与 M1 AuthoritySnapshot 源文件均经 Git Blob SHA 核对与远端完全一致。新增独立命令 `npm run test:m11:r8-p1b`，接入 `test:invariants` 与 `lint:m11`。完整 Node invariants、Prisma Validate、ESLint、Typecheck/Build、PostgreSQL E2E 仍为 **NOT_RUN**，不能用本切片的单测代替。
 
 下一步应先评审治理 Principal 与发奖 Mandate action/capability，冻结签名命令及收据字段；之后以 **B2 PostgreSQL 不可变存储/签名证据门禁** → **B3 真实授权下原子发奖** → **B4 可解释、非处罚性风险观察** 的顺序推进。R7 真库验收独立处理。
+
+## 八、R8-P1c：候选签名密码学预检（2026-10-24）
+
+本切片新增 `next-app/src/lib/integrity/incentive-signature-preflight-draft.mjs` 以及 `next-app/tests/v2-m11-incentive-signature-preflight-draft.test.mjs`。协议候选版本为 `iwantu.incentive-signature-preflight/0.1`，仍属于**只读、无数据库副作用的数学验签门禁**，不是政策发布或真实发奖的授权实现。
+
+### P1c-1：和 M3 签名协议保持兼容
+
+分别从 P1b 的候选政策发布和候选奖励意图重新计算 `payloadHash`，要求呈交的 `iwantu-economic-command/0.1` 严格对应 `action` 和 `payloadHash`，固定 Principal/Agent/Mandate、Nonce、签名键、发放/到期时间与 EdDSA 算法。按现有 M1 `sha256Evidence` 的规范化 JSON 实现 SHA-256 命令摘要，再对其**32 字节原始摘要**用 Ed25519 检验 64 字节签名，与 M3 `hashEconomicCommandEvidence` 的编码/验签口径一致。候选政策发布另外要求签名命令的 Principal ID 与候选政策发布者一致；真正的治理主体资格仍需实时服务端校验。
+
+拒绝未知命令字段、非规范毫秒 UTC 时间、过期/最长 10 分钟外的签名窗口、超出 60 秒的未来签发、非 EdDSA 算法、非规范 Base64url、带私钥字段的 JWK、签名/公钥不匹配以及签名后的业务载荷篡改。冻结跨模块黄金摘要：奖励意图 `8f0e6de969ceefb2d8f4caec6229beec583af7ec36f02d804e6a697ec444200d`，对应经济命令 `4501ae84d5b5d2d929a9f573d0b3b519ab7178b750ab3af72cc91ad48c8f75ac`。
+
+### P1c-2：明确不作授权推断
+
+`presentedPublicKeyJwk` 仅是**呈交的公钥**，没有连接 M1 数据库 `AgentCredential`，也没有核验该公钥属于已认证的 Agent、签名凭据是否 active/未吊销或 Mandate 是否具备相应 action。攻击者自己生成密钥、自己签名也可通过这一数学验证；因此结果只能返回 `signatureCheck=valid_for_presented_key_only`，并明确 `authorizationStatus=not_checked`、`nonceReplayStatus=not_checked`、`r8RiskEvaluationEligible=false`。同一命令重复预检会再次得到一致结果，**不是重放幂等或 Nonce 已消费证明**。
+
+`now` 是显式传入的验证时点，未来可信服务只能由服务端时钟提供，不能采纳调用方声称的时间。候选意图不等于已经持久化的政策、发奖授权、Settlement 证据或 Ledger 收据；不得以本预检结果调用现有 `awardProtocolIncentive`，更不能声称 R8 已有效归因或执行经济处罚。
+
+### P1c-3：验证、质量门禁及后续
+
+使用 Node.js v22.16.0 对与远端 Git Blob SHA 一致的 P1c 源码、测试及精确重建的 P1a/P1b/M1 依赖运行原生测试 **8/8 PASS**；两个新文件 `node --check` **PASS**。已将独立命令 `npm run test:m11:r8-p1c` 接入 `test:invariants` 与 `lint:m11`。**完整** Node invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均为 **NOT_RUN**，不借用以前 master 的 CI 成功作为此次通过证明。
+
+后续必须先在独立设计评审中确定 Program 的治理 Principal 和签名动作权限，再把 M3 经过验证的服务端访问凭据/签名凭据/实时 `resolveAuthority` / `captureAuthoritySnapshot` 复用到新收据写入路径；为新命令领域建立 PostgreSQL 唯一 Nonce 与冻结政策版本的审计约束。授权校验应发生于**经济写入之前**，且遵守现行 Ledger 原子提交/锁序与失败整体回滚。未完成这些条件前，R8-B2/B3/B4 均不可判定完成。
