@@ -19,6 +19,7 @@ test('P1g：稳定权益键不依赖字段顺序', () => {
   assert.deepEqual(build(identity()), build(Object.fromEntries(Object.entries(identity()).reverse())));
   assert.equal(build(identity()).protocol, INCENTIVE_PROGRAM_ENTITLEMENT_DRAFT_VERSION);
   assert.match(build(identity()).fingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(build(identity()).fingerprint, 'dce69de6b567d537525635b7507cad6a987893fe3218bade1548601a2c03f138');
 });
 
 test('P1g：政策版本、政策哈希、奖项编号、金额和收款主体不可绕过去重域', () => {
