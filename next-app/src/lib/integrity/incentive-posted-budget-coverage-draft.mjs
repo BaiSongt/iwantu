@@ -1,7 +1,7 @@
-// R8-P1i 只读的历史激励支出覆盖预检：扫描全部 POSTED 激励交易及奖池借方交易。
+// R8-P1k 只读历史激励支出覆盖预检：同时扫描 POSTED 激励类型、奖池借方和伪装的激励来源。
 // 不依赖 R8 的 500 条观察样本，亦不把可归类账本事实等同于治理、签名或预算授权。
 export const INCENTIVE_POSTED_BUDGET_COVERAGE_DRAFT_VERSION =
-  'iwantu.incentive-posted-budget-coverage/0.1';
+  'iwantu.incentive-posted-budget-coverage/0.2';
 
 export class IncentivePostedBudgetCoverageDraftError extends Error {
   constructor(field, reason) {
@@ -67,6 +67,7 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
         t."metadata" ->> 'awardId' AS "awardId",
         t."metadata" ->> 'beneficiaryPrincipalId' AS "beneficiaryPrincipalId",
         p."entryCount", p."poolDebitCount", p."poolValidCount",
+        p."incentiveProvenanceCreditCount",
         p."poolDebitAmount", p."matchedCreditCount", p."matchedCreditAmount"
       FROM "ledger_transactions" t
       CROSS JOIN LATERAL (
@@ -74,6 +75,13 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
           COUNT(e."id") FILTER (
             WHERE e."side" = 'debit' AND a."type" = 'system_incentive'
           ) AS "poolDebitCount",
+          -- 非 incentive 类型也可能冒用奖励来源；不可把这类已记账信用排除在审计范围外。
+          COUNT(e."id") FILTER (
+            WHERE e."side" = 'credit' AND (
+              e."provenance" ->> 'kind' = 'incentive' OR
+              e."provenance" ->> 'sourceReferenceType' = 'protocol_incentive_award'
+            )
+          ) AS "incentiveProvenanceCreditCount",
           COUNT(e."id") FILTER (
             WHERE e."entryIndex" = 0 AND e."side" = 'debit'
               AND a."type" = 'system_incentive' AND a."principalId" IS NULL
@@ -111,7 +119,8 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
         WHERE e."transactionId" = t."id"
       ) p
       WHERE t."status" = 'posted'
-        AND (t."type" = 'incentive' OR p."poolDebitCount" > 0)
+        AND (t."type" = 'incentive' OR t."referenceType" = 'protocol_incentive_award'
+          OR p."poolDebitCount" > 0 OR p."incentiveProvenanceCreditCount" > 0)
     ), classified AS (
       SELECT c.*,
         (
@@ -132,6 +141,7 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
           AND c."entryCount" = 2
           AND c."poolDebitCount" = 1 AND c."poolValidCount" = 1
           AND c."matchedCreditCount" = 1
+          AND c."incentiveProvenanceCreditCount" = 1
           AND c."poolDebitAmount" > 0
           AND c."matchedCreditAmount" = c."poolDebitAmount"
         ) AS "recognized"
