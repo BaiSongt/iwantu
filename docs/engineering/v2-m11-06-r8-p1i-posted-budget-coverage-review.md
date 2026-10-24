@@ -36,3 +36,15 @@
 本轮使用 Node.js v22.16.0，对新增模块/测试执行语法检查及 9 组确定性正反例：**9/9 PASS**。测试覆盖参数绑定、完整 SQL 扫描语义、双分录与 provenance 检查、未分类阻断、非法计数、Decimal 精度、输入污染和 DB 读失败。没有 PostgreSQL 真库，因此这些只是**模拟 SQL 调用的原生测试**，不证明 PostgreSQL SQL 语法、实际计划、并发或执行结果。
 
 完整 `test:invariants`、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E：**NOT_RUN**。在独立测试数据库中应补充：真实合规发奖、多版本累计、缺失 provenance、额外分录、奖池异常借方、冒充 Program、分隔符歧义、空表、读取时并发新增、数据量上界。真库通过前，不接入实际发奖或风险信号。
+
+## 5. R8-P1j：独立 PostgreSQL 回滚验收用例（已提交，尚未真库执行）
+
+新增 `next-app/tests/v2-m11-incentive-posted-budget-coverage-postgres.test.mjs`，专用命令 `npm run test:m11:postgres:r8-coverage`。该用例不是新经济发奖入口，只针对 P1i 只读审计的真实 SQL/数据库语义建立验收路径：
+
+1. **强制隔离**：仅在显式 `IWANTU_R8_POSTGRES_TEST=iwantu_test` 且 `DATABASE_URL` 指向本机 `iwantu_test` PostgreSQL 数据库时连接，拒绝其他主机、数据库名和显式 schema 参数。测试使用单个 Prisma ReadCommitted 交互式事务，最后主动抛出哨兵异常并断言完整回滚；测试期间不提交用户经济事实。
+2. **真实 M2 分录**：复用 `postLedgerTransactionInTransaction()`、Credit provenance 构造器和既有账户辅助函数；同一事务内模拟有限 Incentive 奖池拨款、两个 Program 的合法 POSTED 奖励、重复幂等读取，不自行绕过 canonical posting engine。
+3. **实际 SQL 检验**：对比聚合前后的全池支出、Program 历史支出、交易数和 Decimal(36,8) 最小单位；检查跨 Program 隔离及 `economicWritePermitted=false`、`r8RiskEvaluationEligible=false`。
+4. **Fail-Closed 负例**：在相同未提交事务中加入带分隔符的旧式 Award ID，要求实际 SQL 将其识别为未分类历史账本事实并拒绝预算结果；事务随后整体回滚，结束后核查测试幂等键没有留下持久交易。
+5. **边界**：该用例尚未证明并发可重复读、批量性能、授权预算或治理凭据；未来需增加完整 R7 真库负例、R8 跨政策版本权益唯一性、签名 Nonce 及原子经济写入专项门禁。不得把回滚事务的结构测试视为发奖授权测试。
+
+本轮**仅对新测试文件进行了 Node v22.16.0 的 `node --check` 静态语法检查（PASS）**，并回读 GitHub 远端文件。当前环境未安装完整仓库、Prisma/ESLint 依赖及 PostgreSQL 服务；`test:m11:postgres:r8-coverage` **NOT_RUN**，完整 invariants、Prisma Validate、ESLint、Typecheck、Build 同为 **NOT_RUN**。因此 P1i/P1j **不得标记真库验收 PASS**。
