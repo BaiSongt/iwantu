@@ -23,8 +23,8 @@ before(async () => {
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
       databaseName !== 'iwantu_test' ||
       // 与现有 next-app-ci 的 ?schema=public 保持一致，仍拒绝任何非 public schema。
-      (url.searchParams.has('schema') &&
-        (url.searchParams.getAll('schema').length !== 1 || url.searchParams.get('schema') !== 'public'))) {
+      (url.searchParams.size !== 0 &&
+        (url.searchParams.size !== 1 || url.searchParams.get('schema') !== 'public'))) {
     throw new Error('R8-P1j 仅允许本机 iwantu_test 数据库的默认测试 schema');
   }
   await prisma.$connect();
