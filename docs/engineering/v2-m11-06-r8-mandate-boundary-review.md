@@ -43,3 +43,10 @@ P1e 返回 `mandateActionStatus=matched_live_explicit_action_scope`，但**同�
 **本次代码提交前/后 Node 测试、Prisma Validate、ESLint、Typecheck、Build 和 PostgreSQL E2E 须按实际运行结果记录，不能借用此前 CI。** P1e 完成的是只读动作解析切片，**不是 R8-P1e 全量经济授权、R8-B2 不可变持久化或 R8-B3 原子发奖完成**。
 
 下一工作包：先确认真实 Program 治理注册簿/责任主体与严格金额模型，再在真实 `iwantu_test` 中验证授权快照、Nonce 唯一性及数据库层防伪造；之后设计 B2 收据迁移。所有旧奖励继续 `attribution_unavailable`，不自动回填或将规则信号解释为舞弊判决。
+
+## 5. 本轮验证记录（2026-10-24）
+
+- **PASS**：新增 P1e 源码与 Node 测试文件 `node --check` 语法检查；GitHub 回读的 Git Blob SHA 与本地一致。
+- **PASS（隔离验证）**：7/7 Node 原生测试，P1e 实际模块控制流、模拟的 M1/P1d 只读依赖、真实 Node Ed25519 数学运算；**M1/P1d 由局部替身承接，并未证明真实模块完整联动**。
+- **NOT_RUN**：使用完整仓库真实 M1/P1d 依赖执行 `npm run test:m11:r8-p1e`、完整 `test:invariants`、ESLint、Prisma Validate、Typecheck、Build、PostgreSQL E2E。当前运行环境缺少完整 npm 依赖及独立测试数据库，不能把隔离测试作为 CI 或真库验收。
+- P1e 所有结果依旧只读、无授权放行；后续实现经济额度及 Program 治理边界之前禁止接入真实政策发布或发奖。
