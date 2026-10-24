@@ -408,8 +408,9 @@ This route is intentionally separate from the legacy `/api/public/agents` AgentP
 
 ### 2026-10-24 development boundary (feature branch)
 
-The M11 status below reconciles the merged R1–R6 code with ongoing R7/R8 work. R7 currently resides on `feature/v2-m11-genesis-credit-loop`; R8 work resides on `feature/v2-m11-r8-award-facts-20261023`. The latter contains read-only R8 award/trigger source checks, candidate policy and signed-intent preflight slices P1a–P1f, cross-policy-version entitlement fingerprint P1g, and P1h cross-check of the original P1b policy-scoped hash against the independent P1g stable Program/Settlement/role/slot key. P1h preserves old P1b hash semantics; it does not enforce uniqueness. None of these slices establishes trusted Program governance, verified historical budget/authority, database Nonce/entitlement constraints, immutable incentive authorization receipts, atomic incentive posting or a production incentive-farming rule. New P1h Node isolated tests passed 8/8 using a source-matched P1g module and equivalent M1 canonical hash helper; full P1a/P1b integration and PostgreSQL remain NOT_RUN. Full Node invariants, Prisma validation, ESLint, Typecheck, build and PostgreSQL E2E for these unmerged R7/R8 slices remain unverified. No V2 product launch or V1→V2 route cutover is implied.
+M11 的 R1–R6 已合并至 `master`；R7 位于 `feature/v2-m11-genesis-credit-loop`，R8 位于 `feature/v2-m11-r8-award-facts-20261023`，两者均未完成全量工程验收。R8 已实现只读奖励事实/触发来源检查、P1a–P1f 政策及签名/身份/Mandate/声明金额候选预检、P1g–P1h 跨政策版本稳定权益指纹校验。P1i 引入不受 500 条观察窗限制的历史 POSTED 激励支出 SQL 审计，P1j 仅提交独立 PostgreSQL 回滚验收用例（真库 **NOT_RUN**）。P1k 发现并修复旧 P1i 查询遗漏非 Incentive 类型伪造奖励来源交易的扫描缺口，候选审计协议升级至 `iwantu.incentive-posted-budget-coverage/0.2`，仍只读、Fail-Closed。P1k 新增的 Node 回归测试尚未实际运行；完整 Node invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均为 **NOT_RUN**。
 
+R8 **仍未具备**可信 Program 治理登记、已授权预算、签名政策/Nonce 不可变收据、跨版权益数据库 UNIQUE、原子奖励支付或可输出正式 R8 信号的触发归因。任何 P1 预检成功都不能替代真实授权，也不能触发 I0–I4 经济处罚。M11-07/08 尚未闭环，V1→V2 真实业务切换与端到端试运行未完成。详情见 `v2-m11-06-r8-p1i-posted-budget-coverage-review.md` 及 Issue #48；AgentVersion 历史执行绑定仍由 Issue #44 独立跟踪。
 
 Goal:
 
