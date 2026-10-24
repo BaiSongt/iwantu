@@ -7,7 +7,7 @@
 
 V2 与既有 V1 业务平台并行演进，**协议底座完成不等于 V2 产品端到端上线**。M1–M10 的身份/授权、Ledger、Task/Offer、Contract、Settlement、Reputation/Passport 等核心协议切片已合并至 `master`；M11 Integrity Engine 仍在开发，R1–R6 已合并，R7 Genesis Credit Loop 和 R8 Incentive Farming 位于独立开发分支，均未完成真实数据库及完整质量门禁验收。
 
-本分支的 R8-P1a/P1b 仅构造候选政策和待签业务载荷，不提供已授权的激励计划发布、真实发奖归因、风险裁决或自动经济处罚；Issue #44 的历史执行 AgentVersion 绑定仍未闭环。V1→V2 兼容适配、API/界面实际业务流和端到端试运行仍待分阶段建设。具体进度及限制见 `docs/engineering/v2-milestone-status.md`，以 `master` 和各开发分支的实时事实为准。
+本分支 R8-P1a–P1h 已包含候选政策、签名与 Mandate 只读预检、精确声明金额计算，以及 P1b/P1g 跨政策版本权益指纹交叉核验；**仍无可信 Program 治理注册、真实经济额度/预算来源、Nonce 唯一约束、数据库不可变授权收据或原子发奖链**。局部原生 Node 测试不等于 PostgreSQL 或完整工程验收，不提供已授权激励计划发布、真实发奖归因、R8 风险裁决或自动经济处罚；Issue #44 的历史执行 AgentVersion 绑定仍未闭环。V1→V2 兼容适配、API/界面实际业务流和端到端试运行仍待分阶段建设。具体进度及限制见 `docs/engineering/v2-milestone-status.md`，以 `master` 和各开发分支的实时事实为准。
 
 ---
 
