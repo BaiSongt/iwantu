@@ -69,3 +69,13 @@
 **验收事实**：已推送测试代码，远端文件 Blob SHA 与提交回读一致；对完整测试文件的隔离 V8 语法解析 **PASS**。由于当前执行环境缺少 PostgreSQL 服务、Prisma 安装依赖及完整仓库工作树，新增 Node 测试、真实 SQL 执行、PostgreSQL E2E、Prisma Validate、ESLint、Typecheck、Build、完整 Node invariants **全部 NOT_RUN**。这两项是待运行的断言，不代表数据库已拒绝这些异常。若测试库现存未分类历史交易导致基线拒绝，应保留 Fail-Closed，不可为让测试变绿而绕过完整覆盖扫描。
 
 下一步优先在独立测试库运行全部 R8-P1j/P1k 真库用例，逐个修复实际 SQL/迁移/事务失败，并检查时间与并发边界；在真库验收前，不允许将 R8 预算快照接入正式发奖门禁，也不得宣称 M11-06 闭环。
+
+## 8. R8-P1l：元数据自称激励来源的未分类覆盖（2026-10-24）
+
+审查 `credit-foundation.mjs`、`incentive-awards.mjs` 与 POSTED Ledger 后发现：M2 受控 Genesis/Purchased 发行使用 `metadata.creditSource` 指示信用来源，标准 Protocol Incentive 奖励以 `type=incentive`、`referenceType=protocol_incentive_award`、奖池借方与 Credit provenance 表达来源。现有 P1k `/0.2` 已检查后四者，但对**仅在交易 `metadata.creditSource='incentive'` 自称激励来源**、同时缺少正式奖励结构和 Credit provenance 的其他类型 POSTED 交易不纳入候选，因此未形成明确的来源一致性审计结果。
+
+R8-P1l 将只读审计协议升级至 `iwantu.incentive-posted-budget-coverage/0.3`：在 P1k 候选条件上增加 `t."metadata" ->> 'creditSource' = 'incentive'`，所有候选继续使用原严格分类条件。元数据中的这个字符串**不是可信授权事实、不是信用铸造证明，也不是欺诈结论**；该类非标准交易只能进入未分类统计并导致 Fail-Closed，不能当作标准奖励或可用预算。不得据此自动施加 I0–I4 处罚。既有 Ledger、旧版审计规则标识和历史来源证据不修改。
+
+更新了原生 Node 模拟回归测试与独立 PostgreSQL 事务回滚测试：增加 `type=reserve`、Reserve→Principal 的普通双分录、无 Incentive Credit provenance、但带 `metadata.creditSource='incentive'` 的负例，预期数据库 SQL 将其纳入扫描并拒绝可信预算覆盖。该负例与之前的奖池异常借方、来源类型伪造负例相互隔离。
+
+**验收边界**：GitHub 远端源码回读与隔离 V8 逻辑预检不等于原生 Node 或 PostgreSQL 验收；原生 Node 回归测试、Prisma Validate、ESLint、完整 Node invariants、Typecheck、Build、PostgreSQL E2E 均须以实际运行记录为准；未运行时统一为 **NOT_RUN**。本补强不会让 R8 获得可信治理、已授权预算、政策版本冻结、Nonce 唯一约束、原子入账或正式 IntegritySignal 能力。优先完成 P1j/P1k/P1l 真库执行和异常 SQL 修复，然后再考虑 B2 持久化事实模型。
