@@ -26,7 +26,7 @@ const reject = async (db, input = {programId: 'program-1'}) => {
 test('P1i：空历史全量账本返回零金额，不将结果提升为预算授权', async () => {
   const result = await inspect(mock().db, {programId: 'program-1'});
   assert.equal(result.programPostedSpendIwc, '0.00000000');
-  assert.equal(result.protocol, 'iwantu.incentive-posted-budget-coverage/0.2');
+  assert.equal(result.protocol, 'iwantu.incentive-posted-budget-coverage/0.3');
   assert.equal(result.allPoolDebitIwc, '0.00000000');
   assert.equal(result.auditStatus, 'no_unclassified_posted_candidates_in_query_snapshot');
   assert.equal(result.budgetAuthorityStatus, 'not_checked');
@@ -58,6 +58,7 @@ test('P1k：SQL 全量覆盖 POSTED 激励、奖池借方及伪造来源，不�
   assert.match(sql, /a\."type" = 'system_incentive'/);
   assert.match(sql, /t\."status" = 'posted'/);
   assert.match(sql, /t\."type" = 'incentive' OR t\."referenceType" = 'protocol_incentive_award'/);
+  assert.match(sql, /t\."metadata" ->> 'creditSource' = 'incentive'/);
   assert.match(sql, /p\."poolDebitCount" > 0 OR p\."incentiveProvenanceCreditCount" > 0/);
   assert.match(sql, /e\."provenance" ->> 'kind' = 'incentive'/);
   assert.match(sql, /e\."provenance" ->> 'sourceReferenceType' = 'protocol_incentive_award'/);
@@ -105,6 +106,19 @@ test('P1k：伪造激励来源但未借记 Incentive 奖池的非激励交易必
   assert.match(sql, /t\."referenceType" = 'protocol_incentive_award'/);
   assert.match(sql, /p\."incentiveProvenanceCreditCount" > 0/);
   assert.match(sql, /c\."incentiveProvenanceCreditCount" = 1/);
+});
+
+
+test('P1l：非奖励交易仅在 metadata.creditSource 自称 incentive 时也纳入未分类审计', async () => {
+  const { db, calls } = mock({
+    postedCandidateCount: '1', recognizedAwardCount: '0',
+    unclassifiedCandidateCount: '1', allPoolDebitIwc: '0', programPostedSpendIwc: '0',
+  });
+  await assert.rejects(() => inspect(db, { programId: 'program-1' }),
+    (error) => error instanceof BudgetError && error.field === 'unclassifiedCandidateCount');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /t\."metadata" ->> 'creditSource' = 'incentive'/);
+  assert.deepEqual(calls[0].values, ['program-1']);
 });
 
 test('P1i：拒绝行数错误、缺失结果和伪造计数', async () => {
