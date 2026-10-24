@@ -170,13 +170,15 @@ test('P1n：标准 Incentive Credit provenance 必须精确匹配 v0.1 字段集
   assert.equal(result.economicWritePermitted, false);
   const sql = calls[0].sql;
   // 匹配分录数量与金额的两处条件均不能接受自述的额外权限字段。
-  assert.equal((sql.match(/e\."provenance"\s*=\s*jsonb_build_object\(/g) ?? []).length, 2);
-  for (const key of [
-    'schemaVersion', 'kind', 'beneficiaryPrincipalId', 'sourceReferenceType',
-    'sourceReferenceId', 'programId', 'awardId',
-  ]) {
-    assert.equal((sql.match(new RegExp("'" + key + "',", 'g')) ?? []).length, 2,
-      key + ' 必须参与严格字段集比较');
+  const strictObjects = [...sql.matchAll(/e\."provenance"\s*=\s*jsonb_build_object\(([\s\S]*?)\n\s*\)/g)];
+  assert.equal(strictObjects.length, 2);
+  for (const [, argumentsText] of strictObjects) {
+    // 仅对 jsonb_build_object 的键名逐项校验，避免误数其它 SQL 表达式中的 programId。
+    const keys = [...argumentsText.matchAll(/^\s*'([A-Za-z]+)',/gm)].map((match) => match[1]);
+    assert.deepEqual(keys, [
+      'schemaVersion', 'kind', 'beneficiaryPrincipalId', 'sourceReferenceType',
+      'sourceReferenceId', 'programId', 'awardId',
+    ]);
   }
   assert.deepEqual(calls[0].values, ['program-1']);
 });
