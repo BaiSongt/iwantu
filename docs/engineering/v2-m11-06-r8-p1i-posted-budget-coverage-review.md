@@ -79,3 +79,11 @@ R8-P1l 将只读审计协议升级至 `iwantu.incentive-posted-budget-coverage/0
 更新了原生 Node 模拟回归测试与独立 PostgreSQL 事务回滚测试：增加 `type=reserve`、Reserve→Principal 的普通双分录、无 Incentive Credit provenance、但带 `metadata.creditSource='incentive'` 的负例，预期数据库 SQL 将其纳入扫描并拒绝可信预算覆盖。该负例与之前的奖池异常借方、来源类型伪造负例相互隔离。
 
 **验收边界**：GitHub 远端源码回读与隔离 V8 逻辑预检不等于原生 Node 或 PostgreSQL 验收；原生 Node 回归测试、Prisma Validate、ESLint、完整 Node invariants、Typecheck、Build、PostgreSQL E2E 均须以实际运行记录为准；未运行时统一为 **NOT_RUN**。本补强不会让 R8 获得可信治理、已授权预算、政策版本冻结、Nonce 唯一约束、原子入账或正式 IntegritySignal 能力。优先完成 P1j/P1k/P1l 真库执行和异常 SQL 修复，然后再考虑 B2 持久化事实模型。
+
+## 9. R8-P1n：固定版本 Credit provenance 字段集约束（2026-10-24）
+
+**发现的缺口**：P1l /0.3 的两处贷方匹配条件只逐项检查标准字段的值，却没有限制 JSON 额外字段。现有 M2 通用 posting 允许传入任意兼容 JSON 的分录 provenance；因此，某条结构上正确的 Incentive 交易可以夹带例如 `policyAuthorityVerified: true` 等**没有任何签名或治理验证的自述字段**，仍通过历史预算分类审计。这不是舞弊判定，而是审计输出对不可变来源字段含义不够严格。
+
+**本轮修复**：审计协议升级为 `iwantu.incentive-posted-budget-coverage/0.4`。在原有结构、双分录与金额核验基础上，匹配数量与匹配金额的两个 SQL FILTER 均要求贷方 `provenance` 精确等于 `jsonb_build_object` 构建的 M2 `iwantu-credit-provenance/0.1` 七字段对象。JSONB 对象比较忽略键顺序，但**不允许增加或删除键**；新增来源字段需发布新的 schemaVersion 和明确迁移/兼容规则，不能静默修改历史事实。未分类结果继续 Fail-Closed。
+
+**验证与边界**：新增原生 Node SQL 结构回归及独立 PostgreSQL 回滚负例，用实际 canonical posting 模拟额外夹带伪授权字段。当前仅完成隔离 V8 SQL 输出预检；原生 Node、Prisma Validate、ESLint、Typecheck、Build、完整 invariants、PostgreSQL E2E 均 **NOT_RUN**。数据库回滚用例尚未执行，因此不能宣称真库已成功拒绝该交易。本次不修改 M2 原有发奖接口、历史 Ledger/证据或用户数据，也不授予奖励、签名、治理或 R8 风险结论权限。

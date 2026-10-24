@@ -26,7 +26,7 @@ const reject = async (db, input = {programId: 'program-1'}) => {
 test('P1i：空历史全量账本返回零金额，不将结果提升为预算授权', async () => {
   const result = await inspect(mock().db, {programId: 'program-1'});
   assert.equal(result.programPostedSpendIwc, '0.00000000');
-  assert.equal(result.protocol, 'iwantu.incentive-posted-budget-coverage/0.3');
+  assert.equal(result.protocol, 'iwantu.incentive-posted-budget-coverage/0.4');
   assert.equal(result.allPoolDebitIwc, '0.00000000');
   assert.equal(result.auditStatus, 'no_unclassified_posted_candidates_in_query_snapshot');
   assert.equal(result.budgetAuthorityStatus, 'not_checked');
@@ -161,4 +161,22 @@ test('P1i：账本读失败不会退化成空预算/零历史支出', async () =
       {programId:'program-1'}),
     /database unavailable/,
   );
+});
+
+
+test('P1n：标准 Incentive Credit provenance 必须精确匹配 v0.1 字段集，拒绝附加授权伪字段', async () => {
+  const { db, calls } = mock();
+  const result = await inspect(db, { programId: 'program-1' });
+  assert.equal(result.economicWritePermitted, false);
+  const sql = calls[0].sql;
+  // 匹配分录数量与金额的两处条件均不能接受自述的额外权限字段。
+  assert.equal((sql.match(/e\\."provenance"\\s*=\\s*jsonb_build_object\\(/g) ?? []).length, 2);
+  for (const key of [
+    'schemaVersion', 'kind', 'beneficiaryPrincipalId', 'sourceReferenceType',
+    'sourceReferenceId', 'programId', 'awardId',
+  ]) {
+    assert.equal((sql.match(new RegExp("'" + key + "',", 'g')) ?? []).length, 2,
+      key + ' 必须参与严格字段集比较');
+  }
+  assert.deepEqual(calls[0].values, ['program-1']);
 });

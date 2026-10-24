@@ -298,3 +298,68 @@ test('R8-P1j/P1l 真库：奖池异常借方、来源类型及元数据激励伪
       scenario + ' 回滚后不得留下经济事实');
   }
 });
+
+
+test('R8-P1n 真库：格式完整但额外携带伪授权字段的 Incentive provenance 必须拒绝', async () => {
+  const programId = unique('r8-p1n-program');
+  const awardId = 'award-1';
+  const referenceId = programId + ':' + awardId;
+  const idempotencyKey = 'credit:incentive-award:' + referenceId;
+  const rollback = new Error('R8_P1N_ROLLBACK_ONLY');
+  let exercised = false;
+
+  await assert.rejects(
+    prisma.$transaction(async (tx) => {
+      const baseline = await inspectPostedIncentiveBudgetCoverageDraft(tx, { programId });
+      assert.equal(baseline.unclassifiedCandidateCount, '0');
+      const organization = await tx.organization.create({
+        data: { name: unique('R8 P1n rollback org'), type: 'buyer' },
+      });
+      const principal = await tx.principal.create({
+        data: { type: 'organization', organizationId: organization.id },
+      });
+      const accounts = await ensurePrincipalLedgerAccounts(tx, principal.id);
+      const system = await ensureSystemLedgerAccounts(tx);
+      await postLedgerTransactionInTransaction(tx, {
+        type: 'reserve', referenceType: 'protocol_incentive_budget',
+        referenceId: unique('r8-p1n-funding'),
+        idempotencyKey: unique('credit:r8-p1n-funding'),
+        metadata: { creditSource: 'protocol_incentive_pool', details: null },
+        entries: [
+          { accountId: system.system_reserve.id, side: 'debit', amount: '0.00000001' },
+          { accountId: system.system_incentive.id, side: 'credit', amount: '0.00000001' },
+        ],
+      });
+      // M2 通用 Ledger 允许携带额外 JSON 键，但 R8 v0.1 来源认证不得采信此类伪造授权。
+      await postLedgerTransactionInTransaction(tx, {
+        type: 'incentive', referenceType: 'protocol_incentive_award',
+        referenceId, idempotencyKey,
+        metadata: { programId, awardId, beneficiaryPrincipalId: principal.id, details: null },
+        entries: [
+          { accountId: system.system_incentive.id, side: 'debit', amount: '0.00000001' },
+          { accountId: accounts.principal_available.id, side: 'credit', amount: '0.00000001',
+            provenance: {
+              ...buildCreditProvenance({
+                kind: 'incentive', beneficiaryPrincipalId: principal.id,
+                sourceReferenceType: 'protocol_incentive_award', sourceReferenceId: referenceId,
+                programId, awardId,
+              }),
+              policyAuthorityVerified: true,
+            },
+          },
+        ],
+      });
+      await assert.rejects(
+        () => inspectPostedIncentiveBudgetCoverageDraft(tx, { programId }),
+        (error) => error instanceof IncentivePostedBudgetCoverageDraftError &&
+          error.field === 'unclassifiedCandidateCount',
+      );
+      exercised = true;
+      throw rollback;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 60_000 }),
+    (error) => error === rollback,
+  );
+  assert.equal(exercised, true, '附加伪授权字段的真实账本拒绝断言必须执行');
+  assert.equal(await prisma.ledgerTransaction.count({ where: { idempotencyKey } }), 0,
+    '回滚后不得留下测试发奖事实');
+});

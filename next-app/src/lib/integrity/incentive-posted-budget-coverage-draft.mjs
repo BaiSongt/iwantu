@@ -1,7 +1,7 @@
-// R8-P1l 只读历史激励覆盖：扫描 POSTED 奖励、奖池借方、Credit provenance 及显式来源元数据。
+// R8-P1n 只读历史激励覆盖：扫描 POSTED 奖励、奖池借方、Credit provenance 及显式来源元数据。
 // 不依赖 R8 的 500 条观察样本，亦不把可归类账本事实等同于治理、签名或预算授权。
 export const INCENTIVE_POSTED_BUDGET_COVERAGE_DRAFT_VERSION =
-  'iwantu.incentive-posted-budget-coverage/0.3';
+  'iwantu.incentive-posted-budget-coverage/0.4';
 
 export class IncentivePostedBudgetCoverageDraftError extends Error {
   constructor(field, reason) {
@@ -101,6 +101,16 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
               AND e."provenance" ->> 'sourceReferenceId' = t."referenceId"
               AND e."provenance" ->> 'programId' = t."metadata" ->> 'programId'
               AND e."provenance" ->> 'awardId' = t."metadata" ->> 'awardId'
+              -- Credit provenance v0.1 必须严格匹配固定字段集，拒绝夹带的伪造授权字段。
+              AND e."provenance" = jsonb_build_object(
+                'schemaVersion', 'iwantu-credit-provenance/0.1',
+                'kind', 'incentive',
+                'beneficiaryPrincipalId', a."principalId",
+                'sourceReferenceType', t."referenceType",
+                'sourceReferenceId', t."referenceId",
+                'programId', t."metadata" ->> 'programId',
+                'awardId', t."metadata" ->> 'awardId'
+              )
           ) AS "matchedCreditCount",
           COALESCE(SUM(e."amount") FILTER (
             WHERE e."entryIndex" = 1 AND e."side" = 'credit'
@@ -113,6 +123,16 @@ export async function inspectPostedIncentiveBudgetCoverageDraft(prisma, input) {
               AND e."provenance" ->> 'sourceReferenceId' = t."referenceId"
               AND e."provenance" ->> 'programId' = t."metadata" ->> 'programId'
               AND e."provenance" ->> 'awardId' = t."metadata" ->> 'awardId'
+              -- Credit provenance v0.1 必须严格匹配固定字段集，拒绝夹带的伪造授权字段。
+              AND e."provenance" = jsonb_build_object(
+                'schemaVersion', 'iwantu-credit-provenance/0.1',
+                'kind', 'incentive',
+                'beneficiaryPrincipalId', a."principalId",
+                'sourceReferenceType', t."referenceType",
+                'sourceReferenceId', t."referenceId",
+                'programId', t."metadata" ->> 'programId',
+                'awardId', t."metadata" ->> 'awardId'
+              )
           ), 0) AS "matchedCreditAmount"
         FROM "ledger_entries" e
         JOIN "ledger_accounts" a ON a."id" = e."accountId"
