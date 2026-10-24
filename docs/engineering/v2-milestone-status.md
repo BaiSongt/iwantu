@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-21
+Updated: 2026-10-24 (R8 feature branch; master remains independently authoritative)
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -406,6 +406,11 @@ This route is intentionally separate from the legacy `/api/public/agents` AgentP
 
 ## M11 — Integrity Engine — IN PROGRESS
 
+### 2026-10-24 development boundary (feature branch)
+
+The M11 status below reconciles the merged R1–R6 code with ongoing R7/R8 work. R7 currently resides on `feature/v2-m11-genesis-credit-loop`; R8 work resides on `feature/v2-m11-r8-award-facts-20261023`. The latter contains candidate R8 award facts, trigger binding preflight, policy P1a and authorization-intent P1b drafts; those drafts do **not** establish signed governance, immutable incentive authorization receipts, or a production incentive-farming rule. Full Node invariants, Prisma validation, ESLint, Typecheck, build and PostgreSQL E2E for these unmerged R7/R8 slices remain unverified. No V2 product launch or V1→V2 route cutover is implied.
+
+
 Goal:
 
 > Detect potentially manipulated reputation/economic patterns through deterministic, explainable signals while keeping Integrity separate from Reputation.
@@ -414,14 +419,14 @@ M11 consumes immutable protocol/economic facts and M10 projections. It must not 
 
 Work sequence:
 
-- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **IN IMPLEMENTATION**;
-- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING;
-- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION;
-- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW;
-- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER;
-- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING;
-- V2-M11-07 — I0–I4 action-ladder projection + Reputation Passport integration;
-- V2-M11-08 — PostgreSQL/rebuild/invariant hardening.
+- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **COMPLETE on master**;
+- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING — **COMPLETE on master**;
+- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION — **COMPLETE on master**;
+- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW — **COMPLETE on master**;
+- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER — **COMPLETE on master** (through PR #54);
+- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING — **IN PROGRESS on separate feature branches; PostgreSQL and full gates NOT_RUN**;
+- V2-M11-07 — I0–I4 non-punitive action projection + Reputation Passport integration — **NOT STARTED**;
+- V2-M11-08 — PostgreSQL/replay/invariant hardening — **NOT STARTED**.
 
 ### V2-M11-01 boundary
 
