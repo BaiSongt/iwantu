@@ -218,3 +218,75 @@ test('R8-P1k 真库：非激励交易伪造 Incentive Credit 来源必须完整�
   assert.equal(await prisma.ledgerTransaction.count({ where: { idempotencyKey } }), 0,
     '回滚后不得保留伪造来源的经济记录');
 });
+
+test('R8-P1j 真库：奖池异常借方及仅来源类型伪造均拒绝覆盖', async () => {
+  // 每个负例使用单独回滚事务，避免前一异常掩盖另一条检测条件。
+  for (const scenario of ['pool_debit_without_award', 'forged_source_type_only']) {
+    const programId = unique('r8-p1j-' + scenario);
+    const idempotencyKey = unique('credit:r8-p1j-' + scenario);
+    const rollback = new Error('R8_P1J_NEGATIVE_ROLLBACK_ONLY');
+    let exercised = false;
+
+    await assert.rejects(
+      prisma.$transaction(async (tx) => {
+        const baseline = await inspectPostedIncentiveBudgetCoverageDraft(tx, { programId });
+        assert.equal(baseline.unclassifiedCandidateCount, '0');
+        const organization = await tx.organization.create({
+          data: { name: unique('R8 P1j rollback org'), type: 'buyer' },
+        });
+        const principal = await tx.principal.create({
+          data: { type: 'organization', organizationId: organization.id },
+        });
+        const accounts = await ensurePrincipalLedgerAccounts(tx, principal.id);
+        const system = await ensureSystemLedgerAccounts(tx);
+        let debitAccountId = system.system_reserve.id;
+        let provenance;
+
+        if (scenario === 'pool_debit_without_award') {
+          // 从有限奖池挪出非发奖交易，必须作为未分类支出拒绝。
+          await postLedgerTransactionInTransaction(tx, {
+            type: 'reserve', referenceType: 'protocol_incentive_budget',
+            referenceId: unique('r8-p1j-funding'),
+            idempotencyKey: unique('credit:r8-p1j-funding'),
+            metadata: { creditSource: 'protocol_incentive_pool', details: null },
+            entries: [
+              { accountId: system.system_reserve.id, side: 'debit', amount: '0.00000001' },
+              { accountId: system.system_incentive.id, side: 'credit', amount: '0.00000001' },
+            ],
+          });
+          debitAccountId = system.system_incentive.id;
+        } else {
+          // kind=earned，但仅 sourceReferenceType 冒充协议奖励来源。
+          provenance = buildCreditProvenance({
+            kind: 'earned', beneficiaryPrincipalId: principal.id,
+            sourceReferenceType: 'protocol_incentive_award',
+            sourceReferenceId: unique('r8-p1j-fake-source'),
+            contractId: unique('r8-p1j-fake-contract'),
+          });
+        }
+
+        await postLedgerTransactionInTransaction(tx, {
+          type: 'reserve', referenceType: 'r8_audit_negative_' + scenario,
+          referenceId: unique('r8-p1j-negative'), idempotencyKey,
+          metadata: { creditSource: 'r8_audit_negative_test', details: null },
+          entries: [
+            { accountId: debitAccountId, side: 'debit', amount: '0.00000001' },
+            { accountId: accounts.principal_available.id, side: 'credit',
+              amount: '0.00000001', ...(provenance ? { provenance } : {}) },
+          ],
+        });
+        await assert.rejects(
+          () => inspectPostedIncentiveBudgetCoverageDraft(tx, { programId }),
+          (error) => error instanceof IncentivePostedBudgetCoverageDraftError &&
+            error.field === 'unclassifiedCandidateCount',
+        );
+        exercised = true;
+        throw rollback;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 60_000 }),
+      (error) => error === rollback,
+    );
+    assert.equal(exercised, true, scenario + ' 必须执行审计拒绝断言');
+    assert.equal(await prisma.ledgerTransaction.count({ where: { idempotencyKey } }), 0,
+      scenario + ' 回滚后不得留下经济事实');
+  }
+});
