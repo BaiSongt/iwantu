@@ -19,7 +19,7 @@ const COMMAND_FIELDS = Object.freeze([
 
 export class IncentiveSignaturePreflightDraftError extends Error {
   constructor(field, reason) {
-    super(\`\${field}: \${reason}\`);
+    super(`${field}: ${reason}`);
     this.name = 'IncentiveSignaturePreflightDraftError';
     this.code = 'INCENTIVE_SIGNATURE_PREFLIGHT_DRAFT_INVALID';
     this.field = field;
@@ -79,7 +79,7 @@ function inspect(input, expectedAction, intentDraft) {
     deny('commandEvidence.payloadHash', 'signed payload does not match the candidate intent');
   }
   for (const field of ['principalId', 'agentIdentityId', 'mandateId', 'nonce', 'signingKeyId']) {
-    identifier(evidence[field], \`commandEvidence.\${field}\`);
+    identifier(evidence[field], `commandEvidence.${field}`);
   }
   if (expectedAction === INCENTIVE_POLICY_PUBLISH_ACTION_DRAFT &&
       evidence.principalId !== intentDraft.payload.issuerPrincipalId) {
