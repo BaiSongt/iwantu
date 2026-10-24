@@ -170,7 +170,7 @@ test('P1n：标准 Incentive Credit provenance 必须精确匹配 v0.1 字段集
   assert.equal(result.economicWritePermitted, false);
   const sql = calls[0].sql;
   // 匹配分录数量与金额的两处条件均不能接受自述的额外权限字段。
-  assert.equal((sql.match(/e\\."provenance"\\s*=\\s*jsonb_build_object\\(/g) ?? []).length, 2);
+  assert.equal((sql.match(/e\."provenance"\s*=\s*jsonb_build_object\(/g) ?? []).length, 2);
   for (const key of [
     'schemaVersion', 'kind', 'beneficiaryPrincipalId', 'sourceReferenceType',
     'sourceReferenceId', 'programId', 'awardId',
