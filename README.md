@@ -7,7 +7,7 @@
 
 V2 与既有 V1 业务平台并行演进，**协议底座完成不等于 V2 产品端到端上线**。M1–M10 的身份/授权、Ledger、Task/Offer、Contract、Settlement、Reputation/Passport 等核心协议切片已合并至 `master`；M11 Integrity Engine 仍在开发，R1–R6 已合并，R7 Genesis Credit Loop 和 R8 Incentive Farming 位于独立开发分支。
 
-本分支已修复 Next.js 及剩余依赖告警，完整 `npm audit` 为 **0 vulnerabilities**，此前治理与在线 API 基线已通过 SSH 推送为 `0bfb9da`。R8 已接入 v2 Bearer 认证的计划登记、政策发布、原子发奖、私有查询及单独政策撤销，共 6 个接口。撤销阻止新发奖，保留旧奖励与精确重放；显式治理配置、签名/Mandate、跨版本去重和共享预算约束继续生效，默认空配置关闭写入。最新独立 PostgreSQL 16 验收通过 37 个迁移和 **485/485** 项协议、真实 HTTP/数据库及兼容性测试，相关 lint、类型检查、生产构建通过。尚未部署或配置真实生产计划，MCP/界面、R8 风险规则、预算修订/密钥轮换、R7、Issue #44 和 V1→V2 整体切换仍待完成。详见[政策撤销与推送记录](./docs/engineering/v2-m11-06-r8-policy-revocation.md)、[依赖清零与在线 API 验收](./docs/engineering/v2-m11-06-r8-online-api.md)、[API 契约](./docs/api.md)和[里程碑状态](./docs/engineering/v2-milestone-status.md)。
+本分支已修复 Next.js 及剩余依赖告警，完整 `npm audit` 为 **0 vulnerabilities**。R8 已接入 v2 Bearer 认证的计划登记、政策发布、原子发奖、私有查询、单独政策撤销和已治理奖励观察，共 7 个接口。观察 API 核验历史签名、AuthoritySnapshot、终局结算/M9 与实际账本，提供精确金额及关系分母；R8 风险阈值尚未冻结，观察不自动判定舞弊。签名/Mandate、跨版本去重、共享预算与默认空配置关闭写入继续生效。最新 PostgreSQL 16 验收通过 37 个迁移和 **543/543** 项测试，相关 lint、类型检查、生产构建通过。尚未部署或配置真实生产计划；后续主线为 R8 规则与误报评估、R7 真库验收、动作/Passport 投影。详见[后续开发规划](./docs/engineering/v2-next-development-plan.md)、[观察验收](./docs/engineering/v2-m11-06-r8-governed-observation.md)、[API 契约](./docs/api.md)和[里程碑状态](./docs/engineering/v2-milestone-status.md)。
 
 ---
 

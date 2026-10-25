@@ -219,6 +219,8 @@ const errors = {
   R8_POLICY_NOT_FOUND: [404, 'Published incentive policy was not found.'],
   R8_SETTLEMENT_NOT_FOUND: [404, 'Terminal Settlement was not found.'],
   R8_AWARD_NOT_FOUND: [404, 'Incentive award was not found.'],
+  R8_OBSERVATION_INVALID: [409, 'Stored incentive observation evidence could not be verified.'],
+  R8_OBSERVATION_LIMIT_EXCEEDED: [409, 'Observation evidence exceeds the limit. Choose a shorter window.'],
   R8_PROGRAM_ALREADY_REGISTERED: [409, 'The incentive Program is already registered.'],
   R8_POLICY_REVOKED: [409, 'The incentive policy is revoked for new awards.'],
   R8_POLICY_ALREADY_REVOKED: [409, 'The incentive policy is already revoked.'],

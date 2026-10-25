@@ -197,6 +197,9 @@ jobs:
       - name: R8 policy revocation regression lint
         run: npm run lint:r8-revocation
 
+      - name: R8 governed observation lint
+        run: npm run lint:r8-observation
+
       - name: Typecheck
         run: npm run typecheck
 
