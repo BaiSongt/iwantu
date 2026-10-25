@@ -1165,6 +1165,7 @@ curl -X POST http://localhost:3000/api/mcp \
 | POST | `/api/v2/incentives/programs` | 配置的治理 Principal，action=`incentive.program.register` |
 | GET | `/api/v2/incentives/programs/{programId}` | 该计划治理方或执行方 |
 | POST | `/api/v2/incentives/programs/{programId}/policies` | 配置的治理 Principal，action=`incentive.policy.publish` |
+| POST | `/api/v2/incentives/programs/{programId}/policies/{policyHash}/revocations` | 配置的治理 Principal，action=`incentive.policy.revoke`，使用固定治理签名密钥 |
 | POST | `/api/v2/incentives/programs/{programId}/awards` | 配置的执行 Principal，action=`incentive.award.issue` |
 | GET | `/api/v2/incentives/programs/{programId}/awards/{awardId}` | 该计划治理方、执行方或该奖励真实受益方 |
 
@@ -1173,13 +1174,18 @@ curl -X POST http://localhost:3000/api/mcp \
 ```text
 登记：{ registration, commandEvidence, signature }
 发布：{ policy, commandEvidence, signature }
+撤销：{ revocation, commandEvidence, signature }
 发奖：{ programId, policyHash, settlementId, commandEvidence, signature }
 ```
 
 `registration` 协议为 `iwantu.incentive-program-registration/0.1`；政策协议为 `iwantu.incentive-program-policy/0.2`、去重域为 `program_settlement_role_slot`；命令协议为 `iwantu-economic-command/0.1`。使用现有规范载荷构造器生成 `payloadHash`，签署规范命令摘要原始字节，提交 base64url `signature`。私钥不能提交给服务器；`authentication`、AuthoritySnapshot、受信配置、发奖金额或收款人均不能通过额外字段注入发奖请求。
 
+`revocation` 严格包含 `{protocol: "iwantu.incentive-policy-revocation/0.1", programId, policyHash, reasonCode}`，两个标识均须与 URL 一致；`reasonCode` 仅可为 `security`、`policy_error`、`superseded` 或 `operational`。使用 `buildPolicyRevocationPayload` 构造签名载荷，仍须精确的实时 `incentive.policy.revoke` Mandate。撤销不涉及 IWC，无需金额上限，不能传入金额、生效时间或授权快照。
+
+撤销在事务提交后立即阻止该政策的新发奖，与发奖共用 M2 全局事务锁。已提交奖励及其精确重放保留；其他政策版本仍受原有共享预算与权益去重约束。撤销事件不可修改、删除或恢复。完全相同的撤销命令重放返回 200，新命令再次撤销同一政策返回 `409 R8_POLICY_ALREADY_REVOKED`，使用已撤销政策的新发奖返回 `409 R8_POLICY_REVOKED`。签名或路径不匹配均失败，不产生授权、Nonce 或账本残留。
+
 首次写入成功返回 **201**；完全相同的已提交命令重放返回 **200** 和 `idempotent: true`。新 Nonce 或新政策版本不能再次消费相同 Program/Settlement/角色/槽位权益。响应仅包含显式业务 DTO、授权/账本/收据摘要等引用，不包含原始签名、访问凭据或完整授权行。
 
-计划查询返回 `{program, policies, hasMorePolicies}`，其中政策窗口为最近 50 条；奖励查询返回 `{award}`。不可见资源与不存在资源均返回 404。成功和应用层错误响应均禁止缓存；同一已验证 Credential 每进程每分钟最多 60 次 R8 请求，超限返回 429 与 `Retry-After`。
+计划查询返回 `{program, policies, hasMorePolicies}`，其中政策窗口为最近 50 条，每项为 `{policy, policyHash, createdAt, revocation}`；`revocation` 为 `null` 或包含 `id`、`programId`、`policyHash`、`reasonCode`、`authorizationId`、`revocationHash`、`createdAt` 的安全 DTO，不改变签名政策原文。奖励查询返回 `{award}`。不可见资源与不存在资源均返回 404。成功和应用层错误响应均禁止缓存；同一已验证 Credential 每进程每分钟最多 60 次 R8 请求，超限返回 429 与 `Retry-After`。
 
 应用层错误格式为 `{error: {code, message}}`，包括：401 认证失败、403 无权操作、404 不存在/不可见、408 请求体超时、409 状态/预算/Nonce/权益冲突、413 请求体超量、415 媒体类型错误、422 不符合政策、429 限流、503 未启用/认证或配置不可用。未知内部错误为脱敏 500，不返回 SQL 或数据库连接信息。

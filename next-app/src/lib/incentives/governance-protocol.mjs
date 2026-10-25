@@ -11,13 +11,14 @@ import {
 
 export const INCENTIVE_REGISTRATION_PROTOCOL = 'iwantu.incentive-program-registration/0.1';
 export const INCENTIVE_POLICY_PROTOCOL = 'iwantu.incentive-program-policy/0.2';
+export const INCENTIVE_POLICY_REVOCATION_PROTOCOL = 'iwantu.incentive-policy-revocation/0.1';
 export const INCENTIVE_ENTITLEMENT_SCOPE = 'program_settlement_role_slot';
 
 const SCALE = 100_000_000n;
 const MAX_UNITS = 10n ** 36n - 1n;
 const DIGEST = /^[0-9a-f]{64}$/;
 const ACTIONS = new Set([
-  'incentive.program.register', 'incentive.policy.publish', 'incentive.award.issue',
+  'incentive.program.register', 'incentive.policy.publish', 'incentive.policy.revoke', 'incentive.award.issue',
 ]);
 const TRUST_FIELDS = [
   'governancePrincipalId', 'governanceSigningKeyId', 'governanceKeyHash',
@@ -193,6 +194,23 @@ export function buildPolicyPayload(candidate) {
     action: 'incentive.policy.publish',
     programId: normalized.policy.programId,
     policyHash: normalized.policyHash,
+  });
+}
+
+export function buildPolicyRevocationPayload(input) {
+  exact(input, ['protocol', 'programId', 'policyHash', 'reasonCode'], 'revocation');
+  if (input.protocol !== INCENTIVE_POLICY_REVOCATION_PROTOCOL) {
+    deny('protocol', 'unsupported policy revocation protocol');
+  }
+  if (!['security', 'policy_error', 'superseded', 'operational'].includes(input.reasonCode)) {
+    deny('reasonCode', 'requires a supported policy revocation reason');
+  }
+  return freeze({
+    protocol: INCENTIVE_POLICY_REVOCATION_PROTOCOL,
+    programId: key(input.programId, 'programId'),
+    policyHash: digest(input.policyHash, 'policyHash'),
+    reasonCode: input.reasonCode,
+    action: 'incentive.policy.revoke',
   });
 }
 

@@ -10,6 +10,7 @@ import {
   amountUnits,
   buildAwardPayload,
   buildPolicyPayload,
+  buildPolicyRevocationPayload,
   buildRegistrationPayload,
   normalizePolicy,
   normalizeRegistration,
@@ -49,6 +50,13 @@ async function bindingRow(tx, awardId) {
     WHERE "id" = ${awardId}
   `;
   return rows[0] ?? null;
+}
+
+async function policyRevocationRow(tx, policyHash) {
+  const [revocation] = await tx.$queryRaw`
+    SELECT * FROM "r8_incentive_policy_revocations" WHERE "policyHash" = ${policyHash}
+  `;
+  return revocation ?? null;
 }
 
 async function replayAuthorization(tx, authentication, input, payload) {
@@ -115,10 +123,13 @@ async function authorize(tx, authentication, input, payload, registration, amoun
   if (!authority.effective.actionScopes.includes(payload.action)) {
     deny('R8_EXPLICIT_ACTION_REQUIRED', 'Wildcard authority cannot authorize incentive governance');
   }
-  const limits = authority.effective.economicLimits;
-  if (limits?.currency !== 'IWC' || typeof limits.singleContract !== 'string' ||
-      amountUnits(amountIwc) > amountUnits(limits.singleContract)) {
-    deny('R8_ECONOMIC_LIMIT_EXCEEDED', 'Explicit exact IWC commitment limit is missing or insufficient');
+  const nonmonetary = payload.action === 'incentive.policy.revoke';
+  if (!nonmonetary) {
+    const limits = authority.effective.economicLimits;
+    if (limits?.currency !== 'IWC' || typeof limits.singleContract !== 'string' ||
+        amountUnits(amountIwc) > amountUnits(limits.singleContract)) {
+      deny('R8_ECONOMIC_LIMIT_EXCEEDED', 'Explicit exact IWC commitment limit is missing or insufficient');
+    }
   }
   const used = await tx.$queryRaw`
     SELECT "commandHash" FROM "r8_incentive_authorizations"
@@ -128,7 +139,7 @@ async function authorize(tx, authentication, input, payload, registration, amoun
   const snapshot = await captureAuthoritySnapshot(tx, bound, {
     action: payload.action, commandHash: proof.commandHash, payloadHash: proof.payloadHash,
     nonce: evidence.nonce, signingCredentialId: signing.id, signingKeyId: signing.keyId,
-    signatureAlgorithm: 'EdDSA', economic: { singleContract: amountIwc, currency: 'IWC' },
+    signatureAlgorithm: 'EdDSA', economic: nonmonetary ? null : { singleContract: amountIwc, currency: 'IWC' },
     ...(isAward ? { counterpartyPrincipalId: payload.beneficiaryPrincipalId } : {}),
   }, now);
   const [authorization] = await tx.$queryRaw`
@@ -145,8 +156,8 @@ async function authorize(tx, authentication, input, payload, registration, amoun
   return authorization;
 }
 
-// Construct this service in trusted server setup. There is deliberately no HTTP
-// route or implicit admin fallback; missing configuration disables all writes.
+// Construct this service in trusted server setup. HTTP adapters supply only
+// authenticated identities; there is no implicit admin or request-config fallback.
 export function createIncentiveGovernanceService({ trustedPrograms = {} } = {}) {
   const trusted = normalizeTrustedPrograms(trustedPrograms);
   function configured(programId) {
@@ -234,6 +245,44 @@ export function createIncentiveGovernanceService({ trustedPrograms = {} } = {}) 
       });
     },
 
+    async revokePolicy(prisma, authentication, input) {
+      fields(input, ['revocation', 'commandEvidence', 'signature']);
+      const payload = buildPolicyRevocationPayload(input.revocation);
+      configured(payload.programId);
+      return atomic(prisma, async (tx) => {
+        const program = await requireProgram(tx, payload.programId);
+        const replay = await replayAuthorization(tx, authentication, input, payload);
+        if (replay) {
+          return { revocation: await policyRevocationRow(tx, payload.policyHash), authorization: replay, idempotent: true };
+        }
+        await rootLive(tx, program);
+        const [policy] = await tx.$queryRaw`
+          SELECT "policyHash" FROM "r8_incentive_policies"
+          WHERE "programId" = ${payload.programId} AND "policyHash" = ${payload.policyHash}
+        `;
+        if (!policy) deny('R8_POLICY_NOT_FOUND', 'Only an existing published policy can be revoked');
+        if (await policyRevocationRow(tx, payload.policyHash)) {
+          deny('R8_POLICY_ALREADY_REVOKED', 'A policy may have only one immutable revocation');
+        }
+        // Disabling a policy consumes no IWC, so no monetary cap is needed.
+        // The exact governance action, live pinned key and nonce still apply.
+        const authorization = await authorize(tx, authentication, input, payload, program.registration, null);
+        const evidence = {
+          protocol: payload.protocol, programId: payload.programId, policyHash: payload.policyHash,
+          reasonCode: payload.reasonCode, authorizationId: authorization.commandHash,
+        };
+        const [revocation] = await tx.$queryRaw`
+          INSERT INTO "r8_incentive_policy_revocations" (
+            "id", "programId", "policyHash", "authorizationId", "reasonCode", "evidence", "revocationHash"
+          ) VALUES (
+            ${authorization.commandHash}, ${program.programId}, ${payload.policyHash}, ${authorization.commandHash},
+            ${payload.reasonCode}, ${JSON.stringify(evidence)}::jsonb, ${sha256Evidence(evidence)}
+          ) RETURNING *
+        `;
+        return { revocation, authorization, idempotent: false };
+      });
+    },
+
     async awardForSettlement(prisma, authentication, input) {
       fields(input, ['programId', 'policyHash', 'settlementId', 'commandEvidence', 'signature']);
       configured(input.programId);
@@ -269,6 +318,9 @@ export function createIncentiveGovernanceService({ trustedPrograms = {} } = {}) 
             where: { id: binding.ledgerTransactionId }, include: { entries: { orderBy: { entryIndex: 'asc' } } },
           });
           return { binding, ledgerTransaction, authorization: replay, idempotent: true };
+        }
+        if (await policyRevocationRow(tx, candidate.policyHash)) {
+          deny('R8_POLICY_REVOKED', 'The policy no longer authorizes new awards');
         }
         await rootLive(tx, program);
         const beneficiary = await tx.principal.findUnique({ where: { id: beneficiaryPrincipalId } });

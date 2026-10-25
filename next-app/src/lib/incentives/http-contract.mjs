@@ -26,7 +26,7 @@ const positiveAmount = z.string().regex(/^(0|[1-9][0-9]{0,27})\.[0-9]{8}$/)
   .refine((value) => value !== '0.00000000');
 const command = z.object({
   protocolVersion: z.literal('iwantu-economic-command/0.1'),
-  action: z.enum(['incentive.program.register', 'incentive.policy.publish', 'incentive.award.issue']),
+  action: z.enum(['incentive.program.register', 'incentive.policy.publish', 'incentive.policy.revoke', 'incentive.award.issue']),
   principalId: identifier,
   agentIdentityId: identifier,
   mandateId: identifier,
@@ -64,6 +64,16 @@ const schemas = {
     signature,
   }).strict(),
   policy: z.object({ policy, commandEvidence: command, signature }).strict(),
+  revoke: z.object({
+    revocation: z.object({
+      protocol: z.literal('iwantu.incentive-policy-revocation/0.1'),
+      programId: safeKey,
+      policyHash: digest,
+      reasonCode: z.enum(['security', 'policy_error', 'superseded', 'operational']),
+    }).strict(),
+    commandEvidence: command,
+    signature,
+  }).strict(),
   award: z.object({
     programId: safeKey,
     policyHash: digest,
@@ -75,6 +85,7 @@ const schemas = {
 const actions = {
   register: 'incentive.program.register',
   policy: 'incentive.policy.publish',
+  revoke: 'incentive.policy.revoke',
   award: 'incentive.award.issue',
 };
 
@@ -88,9 +99,9 @@ function fail(status, code) {
 /**
  * @param {Request} request
  * @param {string} kind
- * @param {{programId?: string, bodyTimeoutMs?: number}} [options]
+ * @param {{programId?: string, policyHash?: string, bodyTimeoutMs?: number}} [options]
  */
-export async function readIncentiveJson(request, kind, { programId, bodyTimeoutMs = 10_000 } = {}) {
+export async function readIncentiveJson(request, kind, { programId, policyHash, bodyTimeoutMs = 10_000 } = {}) {
   if (!Object.hasOwn(schemas, kind)) fail(400, 'R8_INPUT_INVALID');
   if (!Number.isInteger(bodyTimeoutMs) || bodyTimeoutMs < 1 || bodyTimeoutMs > 10_000) {
     fail(500, 'R8_INTERNAL_ERROR');
@@ -172,8 +183,12 @@ export async function readIncentiveJson(request, kind, { programId, bodyTimeoutM
     fail(400, 'R8_INPUT_INVALID');
   }
   const actualProgram = kind === 'register' ? parsed.data.registration.programId
-    : kind === 'policy' ? parsed.data.policy.programId : parsed.data.programId;
+    : kind === 'policy' ? parsed.data.policy.programId
+      : kind === 'revoke' ? parsed.data.revocation.programId : parsed.data.programId;
   if (programId !== undefined && actualProgram !== programId) fail(400, 'R8_PATH_MISMATCH');
+  if (policyHash !== undefined && (kind !== 'revoke' || parsed.data.revocation.policyHash !== policyHash)) {
+    fail(400, 'R8_PATH_MISMATCH');
+  }
   return parsed.data;
 }
 
@@ -205,12 +220,15 @@ const errors = {
   R8_SETTLEMENT_NOT_FOUND: [404, 'Terminal Settlement was not found.'],
   R8_AWARD_NOT_FOUND: [404, 'Incentive award was not found.'],
   R8_PROGRAM_ALREADY_REGISTERED: [409, 'The incentive Program is already registered.'],
+  R8_POLICY_REVOKED: [409, 'The incentive policy is revoked for new awards.'],
+  R8_POLICY_ALREADY_REVOKED: [409, 'The incentive policy is already revoked.'],
   R8_COMMAND_REPLAY: [409, 'Nonce or signed command conflicts with a committed operation.'],
   R8_ENTITLEMENT_CONFLICT: [409, 'The incentive entitlement was already consumed.'],
   R8_PROGRAM_BUDGET_EXCEEDED: [409, 'The incentive Program budget is insufficient.'],
   R8_PROGRAM_HISTORY_UNBOUND: [409, 'Existing Program history requires a separate migration decision.'],
   R8_LEDGER_ACCOUNTS_MISSING: [409, 'Required incentive accounts are not available.'],
   R8_POLICY_INELIGIBLE: [422, 'Policy is not eligible for this Program.'],
+  R8_REVOCATION_INVALID: [422, 'Incentive policy revocation could not be verified.'],
   R8_SETTLEMENT_INELIGIBLE: [422, 'Settlement is not eligible under the incentive policy.'],
   R8_POLICY_HASH_INVALID: [500, 'Stored incentive policy could not be verified.'],
   R8_APPEND_ONLY: [409, 'Committed incentive evidence cannot be changed.'],
@@ -298,6 +316,14 @@ export function serializeIncentiveResult(kind, result) {
         currency: 'IWC',
         ledgerTransactionHash: result.ledgerTransaction.transactionHash,
       },
+      idempotent: result.idempotent,
+    };
+  }
+  if (kind === 'revoke') {
+    return {
+      revocation: pick(result.revocation, [
+        'id', 'programId', 'policyHash', 'reasonCode', 'authorizationId', 'revocationHash', 'createdAt',
+      ]),
       idempotent: result.idempotent,
     };
   }

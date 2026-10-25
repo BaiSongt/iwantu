@@ -4,9 +4,9 @@ import test from 'node:test';
 import { sha256Evidence } from '../src/lib/authority/authority-snapshot.mjs';
 import { buildEconomicCommandEvidence, hashEconomicCommandEvidence } from '../src/lib/signed-economic-command.mjs';
 import {
-  amountUnits, buildAwardPayload, buildPolicyPayload, buildRegistrationPayload,
+  amountUnits, buildAwardPayload, buildPolicyPayload, buildPolicyRevocationPayload, buildRegistrationPayload,
   formatUnits, INCENTIVE_ENTITLEMENT_SCOPE, INCENTIVE_POLICY_PROTOCOL,
-  INCENTIVE_REGISTRATION_PROTOCOL, IncentiveGovernanceError, normalizePolicy,
+  INCENTIVE_POLICY_REVOCATION_PROTOCOL, INCENTIVE_REGISTRATION_PROTOCOL, IncentiveGovernanceError, normalizePolicy,
   normalizeRegistration, normalizeTrustedPrograms, validateSignedCommand,
 } from '../src/lib/incentives/governance-protocol.mjs';
 
@@ -30,6 +30,10 @@ const award = () => ({
   settlementId: 'settlement-1', settlementHash: 'b'.repeat(64),
   beneficiaryPrincipalId: 'supplier-principal', beneficiaryRole: 'supplier',
   awardSlot: 'completion', amountIwc: '0.00000001',
+});
+const revocation = () => ({
+  protocol: INCENTIVE_POLICY_REVOCATION_PROTOCOL,
+  programId: 'program-1', policyHash: 'c'.repeat(64), reasonCode: 'security',
 });
 const reject = (fn) => assert.throws(fn, IncentiveGovernanceError);
 
@@ -131,6 +135,73 @@ test('R8 governance: stable entitlement cannot be bypassed by changing policy, a
   }
   reject(() => buildAwardPayload({ ...award(), awardId: 'bypass' }));
   reject(() => buildAwardPayload({ ...award(), beneficiaryRole: 'admin' }));
+});
+
+test('R8 governance: policy revocation has a deterministic, immutable and separate signed domain', () => {
+  const input = revocation();
+  const payload = buildPolicyRevocationPayload(input);
+  assert.deepEqual(payload, {
+    protocol: 'iwantu.incentive-policy-revocation/0.1', programId: 'program-1',
+    policyHash: 'c'.repeat(64), reasonCode: 'security', action: 'incentive.policy.revoke',
+  });
+  assert.equal(Object.isFrozen(payload), true);
+  input.reasonCode = 'operational';
+  assert.equal(payload.reasonCode, 'security');
+  assert.deepEqual(buildPolicyRevocationPayload(Object.fromEntries(Object.entries(revocation()).reverse())), payload);
+  assert.equal(sha256Evidence(payload), 'f87599466a6ab8b5e5ea94003d5022a0cb7f83f91464471c0da6addf27eb080c');
+  assert.notEqual(sha256Evidence(payload), sha256Evidence({
+    action: 'incentive.policy.publish', programId: payload.programId, policyHash: payload.policyHash,
+  }));
+  const hashes = new Set(['security', 'policy_error', 'superseded', 'operational'].map((reasonCode) =>
+    sha256Evidence(buildPolicyRevocationPayload({ ...revocation(), reasonCode }))));
+  assert.equal(hashes.size, 4, 'each supported reason must be signed');
+});
+
+test('R8 governance: revocation rejects unknown, monetary, authority and client effective-time fields', () => {
+  for (const patch of [
+    { budgetIwc: '10.00000000' }, { amountIwc: '1.00000000' }, { currency: 'IWC' },
+    { beneficiaryPrincipalId: 'chosen-beneficiary' }, { rewardFormula: { kind: 'fixed_amount', amountIwc: '1.00000000' } },
+    { effectiveAt: '2026-10-25T12:00:00.000Z' }, { effectiveFrom: '2026-10-25T12:00:00.000Z' },
+    { effectiveUntil: '2026-10-25T12:00:00.000Z' }, { createdAt: '2026-10-25T12:00:00.000Z' },
+    { authorizationId: 'caller-chosen' }, { governancePrincipalId: 'caller-root' },
+    { action: 'incentive.policy.revoke' }, { unknown: true },
+  ]) reject(() => buildPolicyRevocationPayload({ ...revocation(), ...patch }));
+  for (const field of Object.keys(revocation())) {
+    const input = revocation();
+    delete input[field];
+    reject(() => buildPolicyRevocationPayload(input));
+  }
+  for (const input of [null, [], Object.create(null), {
+    ...revocation(), protocol: 'iwantu.incentive-policy-revocation/0.2',
+  }, { ...revocation(), programId: 'program:1' }, { ...revocation(), policyHash: 'C'.repeat(64) },
+  { ...revocation(), policyHash: 'c'.repeat(63) }, { ...revocation(), reasonCode: 'other' },
+  { ...revocation(), reasonCode: 'Security' }, { ...revocation(), reasonCode: ['security'] }]) {
+    reject(() => buildPolicyRevocationPayload(input));
+  }
+});
+
+test('R8 governance: revocation signatures bind Program, policy, reason and action', () => {
+  const payload = buildPolicyRevocationPayload(revocation());
+  const input = signed(payload);
+  assert.deepEqual(validateSignedCommand(input), {
+    commandHash: hashEconomicCommandEvidence(input.commandEvidence), payloadHash: sha256Evidence(payload),
+  });
+  for (const patch of [{ programId: 'program-2' }, { policyHash: 'd'.repeat(64) }, { reasonCode: 'operational' }]) {
+    const changed = buildPolicyRevocationPayload({ ...revocation(), ...patch });
+    assert.notEqual(sha256Evidence(changed), sha256Evidence(payload));
+    reject(() => validateSignedCommand({ ...input, payload: changed }));
+    reject(() => validateSignedCommand({
+      ...input, payload: changed, commandEvidence: { ...input.commandEvidence, payloadHash: sha256Evidence(changed) },
+    }));
+  }
+  for (const action of ['incentive.program.register', 'incentive.policy.publish', 'incentive.award.issue']) {
+    reject(() => validateSignedCommand({ ...input, expectedAction: action }));
+    const changed = { ...payload, action };
+    reject(() => validateSignedCommand({
+      ...input, expectedAction: action, payload: changed,
+      commandEvidence: { ...input.commandEvidence, action, payloadHash: sha256Evidence(changed) },
+    }));
+  }
 });
 
 test('R8 governance: signed commands use the existing canonical economic-command digest', () => {

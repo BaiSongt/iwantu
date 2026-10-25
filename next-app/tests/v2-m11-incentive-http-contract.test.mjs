@@ -38,6 +38,13 @@ const award = () => ({
   programId, policyHash: 'b'.repeat(64), settlementId: 'settlement-1',
   commandEvidence: commandEvidence('incentive.award.issue'), signature,
 });
+const revoke = () => ({
+  revocation: {
+    protocol: 'iwantu.incentive-policy-revocation/0.1', programId,
+    policyHash: 'b'.repeat(64), reasonCode: 'security',
+  },
+  commandEvidence: commandEvidence('incentive.policy.revoke'), signature,
+});
 function request(body, headers = {}) {
   return new Request('http://localhost/api/v2/incentives/programs', {
     method: 'POST', body: typeof body === 'string' || body instanceof Uint8Array ? body : JSON.stringify(body),
@@ -49,8 +56,8 @@ async function rejection(body, kind = 'register', expectedStatus = 400, options)
     (error) => error instanceof IncentiveHttpError && error.status === expectedStatus);
 }
 
-test('R8 HTTP: bounded strict registration, policy and award contracts preserve exact signed fields', async () => {
-  for (const [kind, value] of [['register', register()], ['policy', policy()], ['award', award()]]) {
+test('R8 HTTP: bounded strict registration, policy, revocation and award contracts preserve exact signed fields', async () => {
+  for (const [kind, value] of [['register', register()], ['policy', policy()], ['revoke', revoke()], ['award', award()]]) {
     assert.deepEqual(await readIncentiveJson(request(value, {
       'content-type': 'Application/JSON; charset=UTF-8',
     }), kind, { programId }), value);
@@ -62,6 +69,52 @@ test('R8 HTTP: bounded strict registration, policy and award contracts preserve 
 test('R8 HTTP: policy and award paths must match the body Program', async () => {
   await rejection(policy(), 'policy', 400, { programId: 'another-program' });
   await rejection(award(), 'award', 400, { programId: 'another-program' });
+});
+
+test('R8 HTTP: revocations bind both the Program and policy path identifiers', async () => {
+  const value = revoke();
+  assert.deepEqual(await readIncentiveJson(request(value), 'revoke', {
+    programId, policyHash: value.revocation.policyHash,
+  }), value);
+  for (const options of [
+    { programId: 'another-program', policyHash: value.revocation.policyHash },
+    { programId, policyHash: 'c'.repeat(64) },
+    { policyHash: 'c'.repeat(64) },
+  ]) {
+    await assert.rejects(() => readIncentiveJson(request(value), 'revoke', options),
+      (error) => error instanceof IncentiveHttpError && error.code === 'R8_PATH_MISMATCH');
+  }
+});
+
+test('R8 HTTP: revocation reasons are bounded and require the exact non-monetary contract', async () => {
+  for (const reasonCode of ['security', 'policy_error', 'superseded', 'operational']) {
+    const value = { ...revoke(), revocation: { ...revoke().revocation, reasonCode } };
+    assert.deepEqual(await readIncentiveJson(request(value), 'revoke'), value);
+  }
+  for (const patch of [
+    { protocol: 'iwantu.incentive-policy-revocation/0.2' }, { programId: 'a:b' },
+    { policyHash: 'B'.repeat(64) }, { reasonCode: 'other' }, { reasonCode: 'Security' },
+    { reasonCode: ['security'] }, { amountIwc: '1.00000000' }, { budgetIwc: '10.00000000' },
+    { currency: 'IWC' }, { beneficiaryPrincipalId: 'chosen' },
+    { effectiveAt: '2026-10-25T12:00:00.000Z' }, { effectiveFrom: '2026-10-25T12:00:00.000Z' },
+    { effectiveUntil: '2026-10-25T12:00:00.000Z' }, { createdAt: '2026-10-25T12:00:00.000Z' },
+    { governancePrincipalId: 'caller-root' }, { authorizationId: 'caller-chosen' },
+    { action: 'incentive.policy.revoke' }, { unknown: true },
+  ]) await rejection({ ...revoke(), revocation: { ...revoke().revocation, ...patch } }, 'revoke');
+  for (const field of Object.keys(revoke().revocation)) {
+    const value = revoke();
+    delete value.revocation[field];
+    await rejection(value, 'revoke');
+  }
+  for (const field of ['authentication', 'trustedPrograms', 'amountIwc', 'effectiveAt']) {
+    await rejection({ ...revoke(), [field]: 'caller-chosen' }, 'revoke');
+  }
+  for (const action of ['incentive.program.register', 'incentive.policy.publish', 'incentive.award.issue']) {
+    await rejection({ ...revoke(), commandEvidence: commandEvidence(action) }, 'revoke');
+  }
+  for (const [kind, value] of [['register', register()], ['policy', policy()], ['award', award()]]) {
+    await rejection({ ...value, commandEvidence: commandEvidence('incentive.policy.revoke') }, kind);
+  }
 });
 
 test('R8 HTTP: request-supplied authentication, trust roots, recipients and amounts are rejected', async () => {
@@ -269,6 +322,7 @@ test('R8 HTTP: domain errors map to stable status codes without returning their 
     ['R8_POLICY_NOT_FOUND', 404], ['R8_COMMAND_REPLAY', 409],
     ['R8_PROGRAM_BUDGET_EXCEEDED', 409], ['LEDGER_ACCOUNT_OVERDRAFT', 409],
     ['R8_SETTLEMENT_INELIGIBLE', 422], ['INCENTIVE_GOVERNANCE_INPUT_INVALID', 400],
+    ['R8_POLICY_REVOKED', 409], ['R8_POLICY_ALREADY_REVOKED', 409], ['R8_REVOCATION_INVALID', 422],
   ];
   for (const [code, status] of cases) {
     const response = incentiveErrorResponse(Object.assign(new Error('secret credential and SQL details'), { code }));
@@ -287,6 +341,9 @@ test('R8 HTTP: authority and Prisma diagnostics are redacted, including unrecogn
     [{ code: 'P2002', message: 'private table and key' }, 409, 'R8_STATE_CONFLICT'],
     [{ code: 'P2010', meta: { code: '23505', message: 'private constraint' } }, 409, 'R8_STATE_CONFLICT'],
     [{ code: 'P2010', meta: { code: 'P0001', message: 'R8_PROGRAM_BUDGET_EXCEEDED private SQL' } }, 409, 'R8_PROGRAM_BUDGET_EXCEEDED'],
+    [{ code: 'P2010', meta: { code: 'P0001', message: 'R8_POLICY_REVOKED private SQL' } }, 409, 'R8_POLICY_REVOKED'],
+    [{ code: 'P2010', meta: { code: 'P0001', message: 'R8_POLICY_ALREADY_REVOKED private SQL' } }, 409, 'R8_POLICY_ALREADY_REVOKED'],
+    [{ code: 'P2010', meta: { code: 'P0001', message: 'R8_REVOCATION_INVALID private SQL' } }, 422, 'R8_REVOCATION_INVALID'],
     [{ code: 'P2010', meta: { code: 'P0001', message: 'R8_LEAK_PRIVATE_ROOT private SQL' } }, 500, 'R8_INTERNAL_ERROR'],
     [{ code: 'R8_NOT_WHITELISTED', message: 'private key' }, 500, 'R8_INTERNAL_ERROR'],
     [new Error('private SQL with R8_TRUST_DENIED text'), 500, 'R8_INTERNAL_ERROR'],
@@ -339,7 +396,19 @@ test('R8 HTTP: explicit success DTOs omit signatures, credential records and unk
   assert.equal(issued.award.ledgerTransactionHash, 'b'.repeat(64));
   assert.equal(issued.award.amountIwc, '0.00000001');
   assert.equal(issued.award.currency, 'IWC');
-  for (const result of [registration, publication, issued]) {
+  const revoked = serializeIncentiveResult('revoke', {
+    revocation: { id: 'revocation-1', programId, policyHash: 'e'.repeat(64), reasonCode: 'security',
+      authorizationId: authorization.commandHash, revocationHash: 'f'.repeat(64), createdAt,
+      signature: 'private-signature', publicKeyJwk: 'private-key', payload: 'private-payload',
+      accessCredentialId: 'private-access', evidence: { private: true } },
+    authorization, idempotent: true,
+  });
+  assert.deepEqual(revoked, {
+    revocation: { id: 'revocation-1', programId, policyHash: 'e'.repeat(64), reasonCode: 'security',
+      authorizationId: authorization.commandHash, revocationHash: 'f'.repeat(64), createdAt },
+    idempotent: true,
+  });
+  for (const result of [registration, publication, issued, revoked]) {
     assert.doesNotMatch(JSON.stringify(result), /private|signature|accessCredential|entries|metadata/);
   }
 });

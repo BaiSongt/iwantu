@@ -43,7 +43,7 @@
     "test:m11:r8-p1h": "node --test tests/v2-m11-incentive-entitlement-bridge-draft.test.mjs",
     "test:m11:r8-p1i": "node --test tests/v2-m11-incentive-posted-budget-coverage-draft.test.mjs",
     "test:m11:postgres:r8-coverage": "node --test tests/v2-m11-incentive-posted-budget-coverage-postgres.test.mjs",
-    "test:m11:postgres": "npm run test:m11:postgres:r8 && npm run test:m11:postgres:r8-coverage && npm run test:m11:postgres:r8-governance",
+    "test:m11:postgres": "npm run test:m11:postgres:r8 && npm run test:m11:postgres:r8-coverage && npm run test:m11:postgres:r8-governance && npm run test:m11:postgres:r8-revocation",
     "test:security:smoke": "node --test tests/next-security-smoke.test.mjs",
     "test:m11:r8-governance": "node --test tests/v2-m11-incentive-governance-protocol.test.mjs",
     "test:m11:postgres:r8-governance": "node --test tests/v2-m11-incentive-governance-postgres.test.mjs",
@@ -51,8 +51,11 @@
     "audit": "npm audit --audit-level=low",
     "test:dependencies": "node --test tests/dependency-compatibility.test.mjs",
     "test:m11:r8-http": "node --test tests/v2-m11-incentive-http-contract.test.mjs",
-    "test:m11:api": "node --test tests/v2-m11-incentive-api-postgres.test.mjs",
-    "lint:r8-api": "eslint src/lib/incentives/http-api.ts src/lib/incentives/http-contract.mjs src/app/api/v2/incentives tests/v2-m11-incentive-http-contract.test.mjs tests/v2-m11-incentive-api-postgres.test.mjs tests/helpers/incentive-api-server.mjs tests/dependency-compatibility.test.mjs"
+    "test:m11:api": "node --test tests/v2-m11-incentive-api-postgres.test.mjs && npm run test:m11:api:r8-revocation",
+    "lint:r8-api": "eslint src/lib/incentives/http-api.ts src/lib/incentives/http-contract.mjs src/app/api/v2/incentives tests/v2-m11-incentive-http-contract.test.mjs tests/v2-m11-incentive-api-postgres.test.mjs tests/helpers/incentive-api-server.mjs tests/dependency-compatibility.test.mjs",
+    "test:m11:postgres:r8-revocation": "node --test tests/v2-m11-incentive-policy-revocation-postgres.test.mjs",
+    "test:m11:api:r8-revocation": "node --test tests/v2-m11-incentive-policy-revocation-api.test.mjs",
+    "lint:r8-revocation": "eslint tests/v2-m11-incentive-policy-revocation-postgres.test.mjs tests/v2-m11-incentive-policy-revocation-api.test.mjs tests/helpers/incentive-policy-revocation-fixtures.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -11,9 +11,9 @@ import {
   readIncentiveJson, serializeIncentiveResult,
 } from './http-contract.mjs';
 
-type CommandKind = 'register' | 'policy' | 'award';
+type CommandKind = 'register' | 'policy' | 'award' | 'revoke';
 const PROGRAM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const AWARD_ID = /^[0-9a-f]{64}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 
 async function identity(request: Request): Promise<V2AgentAuthenticationContext> {
   // Access authentication only. Every write still resolves its exact live
@@ -77,12 +77,19 @@ function failed(error: unknown) {
   return response;
 }
 
-export async function executeIncentiveCommand(request: Request, kind: CommandKind, pathProgramId?: string) {
+export async function executeIncentiveCommand(
+  request: Request, kind: CommandKind, pathProgramId?: string, pathPolicyHash?: string,
+) {
   try {
     const authentication = await identity(request);
     if (pathProgramId !== undefined) programId(pathProgramId);
-    const input = await readIncentiveJson(request, kind,
-      pathProgramId === undefined ? {} : { programId: pathProgramId });
+    if (pathPolicyHash !== undefined && !SHA256.test(pathPolicyHash)) {
+      throw new IncentiveHttpError(400, 'R8_INPUT_INVALID', 'Invalid policy hash');
+    }
+    const input = await readIncentiveJson(request, kind, {
+      ...(pathProgramId === undefined ? {} : { programId: pathProgramId }),
+      ...(pathPolicyHash === undefined ? {} : { policyHash: pathPolicyHash }),
+    });
     const id = kind === 'register' ? input.registration.programId : pathProgramId!;
     const governed = serviceFor(id, kind, authentication);
     // Never accept authentication, authority snapshots or trust configuration
@@ -91,7 +98,9 @@ export async function executeIncentiveCommand(request: Request, kind: CommandKin
       ? await governed.registerProgram(prisma, authentication, input)
       : kind === 'policy'
         ? await governed.publishPolicy(prisma, authentication, input)
-        : await governed.awardForSettlement(prisma, authentication, input);
+        : kind === 'revoke'
+          ? await governed.revokePolicy(prisma, authentication, input)
+          : await governed.awardForSettlement(prisma, authentication, input);
     return incentiveJson(serializeIncentiveResult(kind, result), result.idempotent ? 200 : 201);
   } catch (error) {
     return failed(error);
@@ -114,11 +123,30 @@ export async function readIncentiveProgram(request: Request, pathProgramId: stri
           OR "awardIssuerPrincipalId" = ${authentication.principal.id})
     `;
     if (!program) throw new IncentiveHttpError(404, 'R8_PROGRAM_NOT_FOUND', 'Program is not visible to this Principal');
-    const policies = await prisma.$queryRaw<Array<{ policy: unknown; policyHash: string; createdAt: Date }>>`
-      SELECT "policy", "policyHash", "createdAt" FROM "r8_incentive_policies"
-      WHERE "programId" = ${id} ORDER BY "createdAt" DESC, "policyHash" ASC LIMIT 51
+    const policies = await prisma.$queryRaw<Array<{
+      policy: unknown; policyHash: string; createdAt: Date;
+      revocationId: string | null; revocationReasonCode: string | null;
+      revocationAuthorizationId: string | null; revocationHash: string | null;
+      revocationCreatedAt: Date | null;
+    }>>`
+      SELECT p."policy", p."policyHash", p."createdAt", r."id" AS "revocationId",
+        r."reasonCode" AS "revocationReasonCode", r."authorizationId" AS "revocationAuthorizationId",
+        r."revocationHash", r."createdAt" AS "revocationCreatedAt"
+      FROM "r8_incentive_policies" p
+      LEFT JOIN "r8_incentive_policy_revocations" r ON r."policyHash" = p."policyHash"
+      WHERE p."programId" = ${id} ORDER BY p."createdAt" DESC, p."policyHash" ASC LIMIT 51
     `;
-    return incentiveJson({ program, policies: policies.slice(0, 50), hasMorePolicies: policies.length > 50 });
+    return incentiveJson({
+      program, hasMorePolicies: policies.length > 50,
+      policies: policies.slice(0, 50).map((row) => ({
+        policy: row.policy, policyHash: row.policyHash, createdAt: row.createdAt,
+        revocation: row.revocationId === null ? null : {
+          id: row.revocationId, programId: id, policyHash: row.policyHash,
+          reasonCode: row.revocationReasonCode, authorizationId: row.revocationAuthorizationId,
+          revocationHash: row.revocationHash, createdAt: row.revocationCreatedAt,
+        },
+      })),
+    });
   } catch (error) {
     return failed(error);
   }
@@ -128,7 +156,7 @@ export async function readIncentiveAward(request: Request, pathProgramId: string
   try {
     const authentication = await identity(request);
     const id = programId(pathProgramId);
-    if (!AWARD_ID.test(awardId)) throw new IncentiveHttpError(400, 'R8_INPUT_INVALID', 'Invalid award identifier');
+    if (!SHA256.test(awardId)) throw new IncentiveHttpError(400, 'R8_INPUT_INVALID', 'Invalid award identifier');
     const [binding] = await prisma.$queryRaw<Array<{
       awardId: string; programId: string; policyHash: string; settlementId: string;
       beneficiaryRole: string; awardSlot: string; beneficiaryPrincipalId: string;

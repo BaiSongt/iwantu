@@ -73,7 +73,7 @@ jobs:
 
       # Run coverage against the fresh migrated database before generic Ledger
       # negative fixtures introduce intentionally unclassified historical facts.
-      - name: M11 R8 PostgreSQL award facts and historical coverage
+      - name: M11 R8 PostgreSQL governance, awards, coverage and revocation
         env:
           IWANTU_R8_POSTGRES_TEST: iwantu_test
         run: npm run test:m11:postgres
@@ -193,6 +193,9 @@ jobs:
 
       - name: R8 HTTP API and dependency compatibility lint
         run: npm run lint:r8-api
+
+      - name: R8 policy revocation regression lint
+        run: npm run lint:r8-revocation
 
       - name: Typecheck
         run: npm run typecheck
