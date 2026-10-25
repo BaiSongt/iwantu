@@ -200,6 +200,9 @@ jobs:
       - name: R8 governed observation lint
         run: npm run lint:r8-observation
 
+      - name: R8 experimental shadow evaluation lint
+        run: npm run lint:r8-shadow
+
       - name: Typecheck
         run: npm run typecheck
 

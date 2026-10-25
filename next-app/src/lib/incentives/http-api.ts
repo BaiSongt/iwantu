@@ -6,6 +6,7 @@ import type { V2AgentAuthenticationContext } from '@/lib/agent-auth-context-type
 import { rateLimit } from '@/lib/rate-limit';
 import { readGovernedIncentiveAwardSources } from '@/lib/integrity/governed-incentive-sources.mjs';
 import { buildIncentiveObservation, normalizeIncentiveObservationInput } from '@/lib/integrity/incentive-observation.mjs';
+import { evaluateIncentiveFarmingShadow } from '@/lib/integrity/incentive-farming-shadow.mjs';
 import { createIncentiveGovernanceService } from './governance-service.mjs';
 import { normalizeTrustedPrograms } from './governance-protocol.mjs';
 import {
@@ -184,30 +185,45 @@ export async function readIncentiveAward(request: Request, pathProgramId: string
   }
 }
 
+async function incentiveObservationForRequest(request: Request, pathProgramId: string) {
+  const authentication = await identity(request);
+  const id = programId(pathProgramId);
+  // Observations and shadow evaluations disclose a Program's relationships.
+  // Receiving an award grants no access to other beneficiaries' economic facts.
+  // Current trusted-write configuration does not erase historical evidence.
+  const [visible] = await prisma.$queryRaw<Array<{ programId: string }>>`
+    SELECT "programId" FROM "r8_incentive_programs"
+    WHERE "programId" = ${id}
+      AND ("governancePrincipalId" = ${authentication.principal.id}
+        OR "awardIssuerPrincipalId" = ${authentication.principal.id})
+  `;
+  if (!visible) throw new IncentiveHttpError(404, 'R8_PROGRAM_NOT_FOUND', 'Program is not visible to this Principal');
+  const query = new URL(request.url).searchParams;
+  if (query.size !== 2 || query.getAll('windowStart').length !== 1 || query.getAll('windowEnd').length !== 1) {
+    throw new IncentiveHttpError(400, 'R8_INPUT_INVALID', 'An explicit observation window is required');
+  }
+  const input = normalizeIncentiveObservationInput({
+    programId: id, windowStart: query.get('windowStart'), windowEnd: query.get('windowEnd'),
+  });
+  const sources = await readGovernedIncentiveAwardSources(prisma, input);
+  return buildIncentiveObservation(input, sources);
+}
+
 export async function readIncentiveObservation(request: Request, pathProgramId: string) {
   try {
-    const authentication = await identity(request);
-    const id = programId(pathProgramId);
-    // Observations disclose a Program's relationships, so its governance and
-    // execution Principals may read them. Receiving an award grants no access
-    // to other beneficiaries' economic facts. The registration is immutable;
-    // current trusted-write configuration does not erase historical evidence.
-    const [visible] = await prisma.$queryRaw<Array<{ programId: string }>>`
-      SELECT "programId" FROM "r8_incentive_programs"
-      WHERE "programId" = ${id}
-        AND ("governancePrincipalId" = ${authentication.principal.id}
-          OR "awardIssuerPrincipalId" = ${authentication.principal.id})
-    `;
-    if (!visible) throw new IncentiveHttpError(404, 'R8_PROGRAM_NOT_FOUND', 'Program is not visible to this Principal');
-    const query = new URL(request.url).searchParams;
-    if (query.size !== 2 || query.getAll('windowStart').length !== 1 || query.getAll('windowEnd').length !== 1) {
-      throw new IncentiveHttpError(400, 'R8_INPUT_INVALID', 'An explicit observation window is required');
-    }
-    const input = normalizeIncentiveObservationInput({
-      programId: id, windowStart: query.get('windowStart'), windowEnd: query.get('windowEnd'),
-    });
-    const sources = await readGovernedIncentiveAwardSources(prisma, input);
-    return incentiveJson(buildIncentiveObservation(input, sources));
+    return incentiveJson(await incentiveObservationForRequest(request, pathProgramId));
+  } catch (error) {
+    return failed(error);
+  }
+}
+
+export async function readIncentiveShadowEvaluation(request: Request, pathProgramId: string) {
+  try {
+    // Capture closure before reading: a window that ends while a slow request
+    // is loading must not be treated as complete using an earlier snapshot.
+    const now = new Date();
+    const observation = await incentiveObservationForRequest(request, pathProgramId);
+    return incentiveJson(evaluateIncentiveFarmingShadow(observation, { now }));
   } catch (error) {
     return failed(error);
   }
