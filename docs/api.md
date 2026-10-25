@@ -1169,6 +1169,7 @@ curl -X POST http://localhost:3000/api/mcp \
 | POST | `/api/v2/incentives/programs/{programId}/awards` | 配置的执行 Principal，action=`incentive.award.issue` |
 | GET | `/api/v2/incentives/programs/{programId}/awards/{awardId}` | 该计划治理方、执行方或该奖励真实受益方 |
 | GET | `/api/v2/incentives/programs/{programId}/observations` | 该计划治理方或执行方，读取窗口内已治理奖励及关系统计 |
+| GET | `/api/v2/incentives/programs/{programId}/evaluations` | 该计划治理方或执行方，读取固定实验规则的只读影子评估 |
 
 写请求须为未压缩 `application/json`，实际 UTF-8 请求体不超过 32768 字节，读取总时限 10 秒。所有层级禁止未知字段，路径和载荷中的 Program 必须一致：
 
@@ -1206,3 +1207,13 @@ curl -X POST http://localhost:3000/api/mcp \
 观察在一个 RepeatableRead 只读快照内验证实际来源。旧版未绑定奖励不进入已核验的奖励金额或关系分母；`unboundPostedCandidateCount` 明确标出该 Program、窗口内的未绑定候选，`legacyAttribution` 保持 `unavailable`。窗口结束之后的政策撤销不改变历史窗口结果。当前根密钥停用及写入配置关闭后，合格的活跃 v2 身份仍可读取已提交证明。
 
 观察 API 仅对计划治理方和执行方可见；单个受益者读取完整计划关系返回 404。沿用凭据限流、`no-store` 及显式 DTO。`riskAssessment={state:"not_evaluated",reason:"rule_thresholds_not_frozen"}` 表示当前没有执行 R8 统计分类；结果不产生新的 IntegritySignal、信誉变更或自动处罚。规划与验收见[后续开发规划](./engineering/v2-next-development-plan.md)及[观察记录](./engineering/v2-m11-06-r8-governed-observation.md)。
+
+### 实验影子评估
+
+`GET /api/v2/incentives/programs/{programId}/evaluations` 沿用观察接口的两个必填 UTC 参数、窗口/数量上限和可见性。未知参数，包括阈值、政策摘要、发信号或自动处罚开关，均返回 400；请求不能批准生产政策。
+
+返回 `iwantu.incentive-farming-shadow/0.1` DTO，固定 `mode="shadow"`、`productionPolicyStatus="not_approved"`、`ruleVersion="iwantu.integrity-rule.r8/0.1-exp.1"`。在每个 Principal/Program 下，以去重的独立已奖励 Settlement 为分母；至少 5 笔、其中至少 80% 的窗口奖励 ≥ 各自 gross，且总奖励 ≥ 总 gross，才返回 `candidate_match`。同主体交易不参与这些条件，高频或集中关系不单独触发。
+
+完整且闭合的窗口按主体输出 `candidate_match` / `clear` / `insufficient_evidence`。未绑定候选或开放窗口返回 `state="unavailable"` 和明确原因，不能输出肯定或无风险判断。`clear` 只表示没有命中该实验经济模式。合法高补贴活动也可能命中，不能将候选结果解释为舞弊。
+
+响应包括固定政策、`policyHash`、`sourceObservationFingerprint`、`evaluationFingerprint`、去重金额与比率、Settlement 审计引用及合法解释。`signalEmitted=false` 和 `automaticPunishmentApplied=false` 固定保留，没有正式 IntegritySignal 或经济写入；旧观察接口仍返回未评估状态。具体校准矩阵见[影子评估记录](./engineering/v2-m11-06-r8-shadow-evaluation.md)。

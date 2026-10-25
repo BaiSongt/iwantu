@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { settleAcceptedDelivery } from '../../src/lib/atomic-settlement.mjs';
 import { issueGenesisCredit } from '../../src/lib/ledger/credit-foundation.mjs';
 import { buildFirmOfferHash } from '../../src/lib/offer-protocol.mjs';
 import { issueSignedFirmOffer } from '../../src/lib/signed-economic-command.mjs';
@@ -26,9 +27,11 @@ function protocolSignature(actor, action, payloadHash, nonce = unique('observati
   };
 }
 
-async function formContract(prisma, label, type) {
-  const buyer = await createActor(prisma, `observation-buyer-${label}`, ['offer.accept', 'delivery.reject', 'settlement.mutual']);
-  const supplier = await createActor(prisma, `observation-supplier-${label}`, ['offer.issue', 'delivery.submit', 'settlement.mutual']);
+async function formContract(prisma, label, type, options) {
+  const buyer = options.buyer ?? await createActor(prisma, `observation-buyer-${label}`,
+    ['offer.accept', 'delivery.accept', 'delivery.reject', 'settlement.mutual']);
+  const supplier = options.supplier ?? await createActor(prisma, `observation-supplier-${label}`,
+    ['offer.issue', 'delivery.submit', 'settlement.mutual']);
   const task = await createTask(prisma, {
     issuerPrincipalId: buyer.principal.id, issuerAgentIdentityId: buyer.agent.id,
     protocolPayload: {
@@ -75,13 +78,13 @@ async function formContract(prisma, label, type) {
   return { buyer, supplier, task, issued, formed, contract: formed.contract };
 }
 
-async function disputeDelivery(prisma, fixture) {
+async function decideDelivery(prisma, fixture, decisionType) {
   const { buyer, supplier, contract } = fixture;
   const delivery = {
     deliveryIdempotencyKey: unique('observation-terminal-delivery'), contractId: contract.id,
     effectiveContractHash: contract.effectiveContractHash,
     deliverables: [{ assetRef: unique('observation-output'), mediaType: 'application/json', contentHash: hash(unique('content')) }],
-    evidence: [{ kind: 'test', value: 'delivered for bilateral settlement' }], nonce: unique('observation-delivery'),
+    evidence: [{ kind: 'test', value: 'delivered for terminal settlement' }], nonce: unique('observation-delivery'),
   };
   const deliveryHash = hashDeliveryEvidence(buildDeliveryEvidence({
     ...delivery, acceptedOfferRevisionId: contract.acceptedOfferRevisionId, sequence: 1,
@@ -92,27 +95,28 @@ async function disputeDelivery(prisma, fixture) {
     ...delivery, ...signedDelivery, supplierSignature: signedDelivery.signature,
   });
   const decision = {
-    decisionIdempotencyKey: unique('observation-terminal-rejection'), contractId: contract.id,
+    decisionIdempotencyKey: unique('observation-terminal-decision'), contractId: contract.id,
     effectiveContractHash: contract.effectiveContractHash,
     deliveryId: delivered.delivery.id, deliveryHash: delivered.delivery.deliveryHash,
-    decision: 'reject', reasonCode: 'INCOMPLETE', reasonDetail: 'Observation bilateral settlement fixture',
+    decision: decisionType,
+    ...(decisionType === 'reject' ? { reasonCode: 'INCOMPLETE', reasonDetail: 'Observation bilateral settlement fixture' } : {}),
     buyerPrincipalId: buyer.principal.id, buyerAgentIdentityId: buyer.agent.id, nonce: unique('observation-rejection'),
   };
-  const signedRejection = protocolSignature(buyer, 'delivery.reject',
+  const signedDecision = protocolSignature(buyer, `delivery.${decisionType}`,
     hashDeliveryAcceptanceEvidence(buildDeliveryAcceptanceEvidence(decision)), decision.nonce);
-  const rejected = await decideSignedDelivery(prisma, buyer.authentication, {
-    ...decision, ...signedRejection, buyerSignature: signedRejection.signature,
+  const decided = await decideSignedDelivery(prisma, buyer.authentication, {
+    ...decision, ...signedDecision, buyerSignature: signedDecision.signature,
   });
-  assert.equal(rejected.contract.lifecycleState, 'disputed');
-  assert.ok(rejected.dispute);
-  return { delivered, rejected };
+  assert.equal(decided.contract.lifecycleState, decisionType === 'reject' ? 'disputed' : 'acceptance_pending');
+  if (decisionType === 'reject') assert.ok(decided.dispute);
+  return { delivered, decision: decided };
 }
 
 // Every terminal fact crosses the actual M3-M8 writers and their SQL gates.
 // No Settlement, terminal Ledger or M9 evidence is inserted by this fixture.
-export async function createObservationTerminal(prisma, label, type) {
-  assert.ok(['full_refund', 'mutual_split'].includes(type), 'Unsupported observation terminal fixture type');
-  const fixture = await formContract(prisma, label, type);
+export async function createObservationTerminal(prisma, label, type, options = {}) {
+  assert.ok(['full_settlement', 'full_refund', 'mutual_split'].includes(type), 'Unsupported observation terminal fixture type');
+  const fixture = await formContract(prisma, label, type, options);
   if (type === 'full_refund') {
     const deadline = fixture.contract.activatedAt.getTime() + 1000;
     const waitMs = Math.max(0, deadline + 100 - Date.now());
@@ -124,7 +128,15 @@ export async function createObservationTerminal(prisma, label, type) {
     assert.equal(refunded.settlement.type, 'full_refund');
     return { ...fixture, ...refunded };
   }
-  const { delivered, rejected } = await disputeDelivery(prisma, fixture);
+  if (type === 'full_settlement') {
+    const { delivered, decision: accepted } = await decideDelivery(prisma, fixture, 'accept');
+    const settled = await settleAcceptedDelivery(prisma, {
+      contractId: fixture.contract.id, idempotencyKey: unique('observation-terminal-settlement'),
+    });
+    assert.equal(settled.settlement.type, 'full_settlement');
+    return { ...fixture, delivered, accepted, ...settled };
+  }
+  const { delivered, decision: rejected } = await decideDelivery(prisma, fixture, 'reject');
   const allocation = { grossAmount: '25.50000000', supplierAmount: '15.50000000', buyerRefundAmount: '10.00000000', currency: 'IWC' };
   const evidence = buildMutualSettlementAgreementEvidence({
     ...allocation, contractId: fixture.contract.id, effectiveContractHash: fixture.contract.effectiveContractHash,
