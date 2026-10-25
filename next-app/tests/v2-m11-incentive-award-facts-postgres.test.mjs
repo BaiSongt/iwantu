@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { PrismaClient } from '@prisma/client';
+import { requireR8PostgresTestTarget } from './helpers/r8-postgres-test-target.mjs';
 import {
   fundProtocolIncentivePool,
   issueGenesisCredit,
@@ -18,17 +19,7 @@ let connected = false;
 // 必须显式确认本地独立测试库：不在生产数据库中创建任何测试经济事实。
 // 此测试不会清库、删除用户记录或更新已有 Ledger / ReputationEvidence。
 before(async () => {
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl || process.env.IWANTU_R8_POSTGRES_TEST !== 'iwantu_test') {
-    throw new Error('R8 真库测试需要 DATABASE_URL 和 IWANTU_R8_POSTGRES_TEST=iwantu_test');
-  }
-  const url = new URL(rawUrl);
-  const dbName = decodeURIComponent(url.pathname.replace(/^\//, ''));
-  if (!['postgres:', 'postgresql:'].includes(url.protocol) ||
-      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      dbName !== 'iwantu_test') {
-    throw new Error('R8 真库测试仅允许本机的 iwantu_test PostgreSQL 数据库');
-  }
+  requireR8PostgresTestTarget();
   await prisma.$connect();
   connected = true;
 });
@@ -116,6 +107,20 @@ test('R8 真库：M2 奖励池入账事实可追溯、跨来源隔离、时间�
     new Set(['award-1', 'award-2']),
   );
   assert.ok(facts.records.every((record) => record.principalId === beneficiary.id));
+
+  // The same UTC observation window must work on non-UTC PostgreSQL sessions.
+  for (const timeZone of ['UTC', 'Asia/Shanghai', 'America/New_York']) {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT set_config('TimeZone', ${timeZone}, true)`;
+      assert.deepEqual(await readIncentiveAwardFacts(tx, readInput), facts, timeZone);
+      assert.equal((await readIncentiveAwardFacts(tx, {
+        ...readInput, windowEnd: first.postedAt,
+      })).records.length, 0, timeZone + ': exclusive upper bound');
+      assert.equal((await readIncentiveAwardFacts(tx, {
+        ...readInput, windowStart: first.postedAt,
+      })).records.length, 2, timeZone + ': inclusive lower bound');
+    });
+  }
 
   const beforeFirst = await readIncentiveAwardFacts(prisma, {
     ...readInput, windowEnd: first.postedAt,

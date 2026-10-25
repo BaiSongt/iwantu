@@ -406,11 +406,11 @@ This route is intentionally separate from the legacy `/api/public/agents` AgentP
 
 ## M11 — Integrity Engine — IN PROGRESS
 
-### 2026-10-24 development boundary (feature branch)
+### 2026-10-25 development boundary (feature branch)
 
-M11 的 R1–R6 已合并至 `master`；R7 位于 `feature/v2-m11-genesis-credit-loop`，R8 位于 `feature/v2-m11-r8-award-facts-20261023`，两者均未完成全量工程验收。R8 已实现只读奖励事实/触发来源检查、P1a–P1f 政策及签名/身份/Mandate/声明金额候选预检、P1g–P1h 跨政策版本稳定权益指纹校验。P1i 引入不受 500 条观察窗限制的历史 POSTED 激励支出 SQL 审计，P1j 仅提交独立 PostgreSQL 回滚验收用例（真库 **NOT_RUN**）。P1k 发现并修复旧 P1i 查询遗漏非 Incentive 类型伪造奖励来源交易的扫描缺口，候选审计协议升级至 `iwantu.incentive-posted-budget-coverage/0.2`，仍只读、Fail-Closed。P1l 将元数据 `creditSource=incentive` 自称激励来源的其他 POSTED 交易纳入只读候选扫描，升级候选审计协议至 `iwantu.incentive-posted-budget-coverage/0.3`，增加独立回滚负例。P1n 收紧 Credit provenance v0.1 的七字段精确对象匹配，禁止夹带未验证的授权字段通过结构分类，候选协议升级至 `/0.4`，原生 Node 与 PostgreSQL 回滚负例已提交但 **NOT_RUN**。P1k/P1l 新增的 Node 回归与 PostgreSQL 真库测试尚未实际运行；完整 Node invariants、Prisma Validate、ESLint、Typecheck、Build、PostgreSQL E2E 均为 **NOT_RUN**。
+M11 的 R1–R6 已合并至 `master`；R7 独立分支尚未在本次验收。R8 已接续到本地 `feature/v2-m11-r8-postgres-validation`，完成只读事实层、治理登记/政策/原子发奖首切片及在线 HTTP 接入。先将 Next.js 升级到 16.4.3，随后修复其余 10 项依赖告警，干净安装和完整审计为 0 vulnerabilities；完成回归后再接入 5 个 v2 Bearer 认证接口。新接口保留签名/实时 Mandate、显式治理配置、跨版本去重、共享预算和 M2 原子性，增加严格/限时/限量 JSON、主体可见性、错误与 DTO 脱敏、禁用缓存及凭据限流。最终本地 PostgreSQL 16 验收：36 个迁移、411 项协议/HTTP 契约不变量、21 项 R8 PostgreSQL、12 项真实在线 HTTP E2E、14 项安全 HTTP、6 项依赖兼容性测试全部 PASS（共 464 项）；相关 lint、Prisma Validate、Typecheck、Build 和全级别依赖审计 PASS。未部署、未选择真实治理身份，默认空配置关闭写入；远端 Actions 和 Docker PostgreSQL 15 尚未执行。详见[依赖清零与在线 API 验收](./v2-m11-06-r8-online-api.md)及[治理基础](./v2-m11-06-r8-governance-atomic-awards.md)。
 
-R8 **仍未具备**可信 Program 治理登记、已授权预算、签名政策/Nonce 不可变收据、跨版权益数据库 UNIQUE、原子奖励支付或可输出正式 R8 信号的触发归因。任何 P1 预检成功都不能替代真实授权，也不能触发 I0–I4 经济处罚。M11-07/08 尚未闭环，V1→V2 真实业务切换与端到端试运行未完成。详情见 `v2-m11-06-r8-p1i-posted-budget-coverage-review.md` 及 Issue #48；AgentVersion 历史执行绑定仍由 Issue #44 独立跟踪。
+R8 新路径仅在受信服务器显式配置后，通过真实签名/实时 Mandate、已注册共享预算、冻结 0.2 政策和终局 Settlement 形成前瞻式奖励绑定。既有 P1 草案、历史奖励和旧读取接口不会被静默升级为已授权事实。政策单独撤销、预算增修、密钥轮换、历史计划迁移和 R8 风险统计规则尚未落地；不生成欺诈裁决或 I0–I4 处罚。M11-07/08、V1→V2 实际业务切换和 Issue #44 仍待完成。
 
 Goal:
 
@@ -425,9 +425,9 @@ Work sequence:
 - V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION — **COMPLETE on master**;
 - V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW — **COMPLETE on master**;
 - V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER — **COMPLETE on master** (through PR #54);
-- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING — **IN PROGRESS on separate feature branches; PostgreSQL and full gates NOT_RUN**;
+- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING — **IN PROGRESS; R8 governed fixed-award protocol and authenticated HTTP API PASS locally, risk rules and broader governance lifecycle pending; R7 not verified in this run**;
 - V2-M11-07 — I0–I4 non-punitive action projection + Reputation Passport integration — **NOT STARTED**;
-- V2-M11-08 — PostgreSQL/replay/invariant hardening — **NOT STARTED**.
+- V2-M11-08 — PostgreSQL/replay/invariant hardening — **PARTIAL: R8 transaction/replay gates verified; full Integrity rebuild hardening pending**.
 
 ### V2-M11-01 boundary
 

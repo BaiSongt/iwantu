@@ -282,7 +282,7 @@ async function formContractInTransaction(tx, input, now) {
   });
   assertSupplierSnapshot(supplierSnapshot, offerRevision, offer);
 
-  const amount = normalizeLedgerAmount(String(offerRevision.priceAmount)).decimal;
+  const amount = normalizeLedgerAmount(offerRevision.priceAmount.toFixed(8)).decimal;
   if (offerRevision.currency !== 'IWC') {
     deny('CONTRACT_CURRENCY_UNSUPPORTED', 'M4-01 Contract Formation supports IWC only');
   }

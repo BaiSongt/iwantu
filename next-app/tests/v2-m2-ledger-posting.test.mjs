@@ -313,6 +313,48 @@ test('M2-02: database failure during finalization rolls back draft transaction a
   assert.equal(partialEntries.length, 0);
 });
 
+test('M2-02: smallest-unit balances can be spent exactly and still reject overdrafts', async () => {
+  const fixture = await createPrincipalAccounts('smallest-unit');
+  const reserve = await getSystemAccount('system_reserve');
+  await postLedgerTransaction(prisma, {
+    ...postingInput('smallest-unit-fund', reserve.id, fixture.available.id, '0.00000002'),
+    type: 'reserve',
+  });
+
+  for (let index = 0; index < 2; index += 1) {
+    const spend = {
+      ...postingInput('smallest-unit-spend', fixture.available.id, reserve.id, '0.00000001'),
+      type: 'reserve',
+    };
+    const posted = await postLedgerTransaction(prisma, spend);
+    assert.equal((await postLedgerTransaction(prisma, spend)).id, posted.id);
+    assert.equal(await prisma.ledgerTransaction.count({
+      where: { idempotencyKey: spend.idempotencyKey },
+    }), 1);
+    const [balance] = await prisma.$queryRaw`
+      SELECT SUM(CASE WHEN e."side" = 'credit' THEN e."amount" ELSE -e."amount" END)::text AS "amount"
+      FROM "ledger_entries" e
+      JOIN "ledger_transactions" t ON t."id" = e."transactionId"
+      WHERE e."accountId" = ${fixture.available.id} AND t."status" = 'posted'
+    `;
+    assert.equal(balance.amount, index === 0 ? '0.00000001' : '0.00000000');
+  }
+
+  const overdraft = {
+    ...postingInput('smallest-unit-overdraft', fixture.available.id, reserve.id, '0.00000001'),
+    type: 'reserve',
+  };
+  await assert.rejects(postLedgerTransaction(prisma, overdraft), (error) => {
+    assertLedgerError(error, 'LEDGER_ACCOUNT_OVERDRAFT');
+    assert.equal(error.details.balanceMinorUnits, '0');
+    assert.equal(error.details.deltaMinorUnits, '-1');
+    return true;
+  });
+  assert.equal(await prisma.ledgerTransaction.count({
+    where: { idempotencyKey: overdraft.idempotencyKey },
+  }), 0);
+});
+
 test('M2-02: idempotency lookup rejects stored transaction whose hash is not its canonical evidence', async () => {
   const fixture = await createPrincipalAccounts('tampered-hash');
   const reserve = await getSystemAccount('system_reserve');

@@ -104,7 +104,7 @@ async function createActor(label, orgType, actionScopes) {
   return { suffix, organization, principal, agent, apiCredential, signingKeyId, privateKey, mandate, authentication };
 }
 
-async function createMarketFixture(label) {
+async function createMarketFixture(label, priceAmount = '25.50000000') {
   const buyer = await createActor(`buyer-${label}`, 'buyer', ['offer.accept']);
   const supplier = await createActor(`supplier-${label}`, 'supplier', ['offer.issue']);
   const created = await createTask(prisma, {
@@ -126,7 +126,7 @@ async function createMarketFixture(label) {
   const now = new Date();
   const unsignedOffer = {
     taskId: created.task.id,
-    priceAmount: '25.50000000',
+    priceAmount,
     currency: 'IWC',
     deliveryCommitmentSeconds: 3600,
     validUntil: new Date(now.getTime() + 60 * 60_000),
@@ -205,7 +205,7 @@ function signAcceptance(fixture, now = new Date(), overrides = {}) {
     buyerPrincipalId: fixture.buyer.principal.id,
     buyerAgentIdentityId: fixture.buyer.agent.id,
     supplierPrincipalId: fixture.supplier.principal.id,
-    priceAmount: String(fixture.issued.revision.priceAmount),
+    priceAmount: fixture.issued.revision.priceAmount.toFixed(),
     currency: fixture.issued.revision.currency,
     nonce: base.nonce,
   });
@@ -269,6 +269,28 @@ test('M4-02: signed Buyer acceptance forms exactly one active Contract and immut
   await assert.rejects(
     prisma.$executeRaw`DELETE FROM "offer_acceptance_receipts" WHERE "id" = ${result.acceptanceReceipt.id}`,
   );
+});
+
+test('M4-02: smallest-unit signed Offer forms an exact Escrow and replays without a second lock', async () => {
+  const fixture = await createMarketFixture('smallest-unit-acceptance', '0.00000001');
+  const signed = signAcceptance(fixture);
+  const result = await acceptSignedFirmOffer(prisma, fixture.buyer.authentication, signed.input);
+
+  assert.equal(result.contract.lifecycleState, 'active');
+  assert.equal(result.escrow.amount.toFixed(8), '0.00000001');
+  assert.equal(result.acceptanceHash, signed.acceptanceHash);
+  assert.equal(result.buyerAuthoritySnapshot.requestEvidence.economic.singleContract, '0.00000001');
+  assert.deepEqual(result.ledgerTransaction.entries.map((entry) => entry.amount.toFixed(8)),
+    ['0.00000001', '0.00000001']);
+
+  const replay = await acceptSignedFirmOffer(prisma, fixture.buyer.authentication, signed.input);
+  assert.equal(replay.contract.id, result.contract.id);
+  assert.equal(replay.escrow.id, result.escrow.id);
+  assert.equal(replay.acceptanceReceipt.id, result.acceptanceReceipt.id);
+  assert.equal(replay.idempotent, true);
+  assert.equal(await prisma.ledgerTransaction.count({
+    where: { referenceType: 'escrow_lock', referenceId: result.contract.id },
+  }), 1);
 });
 
 test('M4-02: tampered Buyer signature fails closed before Contract or Escrow creation', async () => {

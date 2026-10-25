@@ -68,8 +68,10 @@ export async function readIncentiveAwardFacts(prisma, input) {
       AND t."status" = 'posted'
       AND t."referenceType" = 'protocol_incentive_award'
       AND t."transactionHash" IS NOT NULL
-      AND t."postedAt" >= CAST(${windowStart} AS timestamp(3))
-      AND t."postedAt" < CAST(${windowEnd} AS timestamp(3))
+      -- Prisma binds Dates as timestamptz; postedAt stores UTC without a zone.
+      -- A plain timestamp cast would shift the window by the session TimeZone.
+      AND t."postedAt" >= (${windowStart}::timestamptz AT TIME ZONE 'UTC')
+      AND t."postedAt" < (${windowEnd}::timestamptz AT TIME ZONE 'UTC')
       AND e."side" = 'credit'
       AND e."entryIndex" = 1
       AND a."type" = 'principal_available'

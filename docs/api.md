@@ -1151,3 +1151,35 @@ curl -X POST http://localhost:3000/api/mcp \
 **认证**：不需要
 
 用于负载均衡器和监控系统的健康探针。
+
+---
+
+## V2 R8 治理与激励 API
+
+这些接口使用 **v2 Agent API Credential**，与上文的 User Cookie / v1 API Key 分离。所有请求须包含 `Authorization: Bearer <iwantu_ac_...>`；写入还须携带独立 Ed25519 经济命令签名和精确 Mandate action。
+
+服务器必须通过 `IWANTU_INCENTIVE_TRUSTED_PROGRAMS` 显式配置治理身份、公钥摘要、执行主体及预算。默认 `{}` 关闭写入；客户端不能从请求体授予治理权。完整配置与签名契约见[治理基础](./engineering/v2-m11-06-r8-governance-atomic-awards.md)和[在线接入记录](./engineering/v2-m11-06-r8-online-api.md)。
+
+| 方法 | 路径 | 可访问主体 |
+| --- | --- | --- |
+| POST | `/api/v2/incentives/programs` | 配置的治理 Principal，action=`incentive.program.register` |
+| GET | `/api/v2/incentives/programs/{programId}` | 该计划治理方或执行方 |
+| POST | `/api/v2/incentives/programs/{programId}/policies` | 配置的治理 Principal，action=`incentive.policy.publish` |
+| POST | `/api/v2/incentives/programs/{programId}/awards` | 配置的执行 Principal，action=`incentive.award.issue` |
+| GET | `/api/v2/incentives/programs/{programId}/awards/{awardId}` | 该计划治理方、执行方或该奖励真实受益方 |
+
+写请求须为未压缩 `application/json`，实际 UTF-8 请求体不超过 32768 字节，读取总时限 10 秒。所有层级禁止未知字段，路径和载荷中的 Program 必须一致：
+
+```text
+登记：{ registration, commandEvidence, signature }
+发布：{ policy, commandEvidence, signature }
+发奖：{ programId, policyHash, settlementId, commandEvidence, signature }
+```
+
+`registration` 协议为 `iwantu.incentive-program-registration/0.1`；政策协议为 `iwantu.incentive-program-policy/0.2`、去重域为 `program_settlement_role_slot`；命令协议为 `iwantu-economic-command/0.1`。使用现有规范载荷构造器生成 `payloadHash`，签署规范命令摘要原始字节，提交 base64url `signature`。私钥不能提交给服务器；`authentication`、AuthoritySnapshot、受信配置、发奖金额或收款人均不能通过额外字段注入发奖请求。
+
+首次写入成功返回 **201**；完全相同的已提交命令重放返回 **200** 和 `idempotent: true`。新 Nonce 或新政策版本不能再次消费相同 Program/Settlement/角色/槽位权益。响应仅包含显式业务 DTO、授权/账本/收据摘要等引用，不包含原始签名、访问凭据或完整授权行。
+
+计划查询返回 `{program, policies, hasMorePolicies}`，其中政策窗口为最近 50 条；奖励查询返回 `{award}`。不可见资源与不存在资源均返回 404。成功和应用层错误响应均禁止缓存；同一已验证 Credential 每进程每分钟最多 60 次 R8 请求，超限返回 429 与 `Retry-After`。
+
+应用层错误格式为 `{error: {code, message}}`，包括：401 认证失败、403 无权操作、404 不存在/不可见、408 请求体超时、409 状态/预算/Nonce/权益冲突、413 请求体超量、415 媒体类型错误、422 不符合政策、429 限流、503 未启用/认证或配置不可用。未知内部错误为脱敏 500，不返回 SQL 或数据库连接信息。

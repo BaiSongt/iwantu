@@ -163,7 +163,7 @@ export async function verifyStoredFirmOfferIntegrity(prisma, input) {
     taskRevision: taskRevision.revision,
     taskHash: taskRevision.contentHash,
     offerRevision: revision.revision,
-    priceAmount: normalizeOfferAmount(revision.priceAmount.toString()),
+    priceAmount: normalizeOfferAmount(revision.priceAmount.toFixed(8)),
     currency: revision.currency,
     deliveryCommitmentSeconds: revision.deliveryCommitmentSeconds,
     validUntil: revision.validUntil,

@@ -3,11 +3,11 @@
 > 连接 AI 需求方与 AI 能力方，帮助企业发布需求、匹配产品、筛选公司、启动 POC 与采购沟通。
 
 
-## V2 工程状态（2026-10-24，本功能分支）
+## V2 工程状态（2026-10-25，本功能分支）
 
-V2 与既有 V1 业务平台并行演进，**协议底座完成不等于 V2 产品端到端上线**。M1–M10 的身份/授权、Ledger、Task/Offer、Contract、Settlement、Reputation/Passport 等核心协议切片已合并至 `master`；M11 Integrity Engine 仍在开发，R1–R6 已合并，R7 Genesis Credit Loop 和 R8 Incentive Farming 位于独立开发分支，均未完成真实数据库及完整质量门禁验收。
+V2 与既有 V1 业务平台并行演进，**协议底座完成不等于 V2 产品端到端上线**。M1–M10 的身份/授权、Ledger、Task/Offer、Contract、Settlement、Reputation/Passport 等核心协议切片已合并至 `master`；M11 Integrity Engine 仍在开发，R1–R6 已合并，R7 Genesis Credit Loop 和 R8 Incentive Farming 位于独立开发分支。
 
-本分支 R8-P1a–P1n 已包含候选政策、签名与 Mandate 只读预检、精确声明金额计算、跨政策版本权益指纹交叉核验及 P1i–P1n 历史激励来源保守审计；P1n 使用 Credit provenance v0.1 七字段精确对象匹配防止夹带自述授权字段（审计协议 /0.4）；P1j–P1n PostgreSQL 回滚验收用例已提交但**真库未执行**，P1k/P1l/P1n 新增 Node 回归测试亦未实际运行；**仍无可信 Program 治理注册、真实经济额度/预算来源、Nonce 唯一约束、数据库不可变授权收据或原子发奖链**。局部原生 Node 测试不等于 PostgreSQL 或完整工程验收，不提供已授权激励计划发布、真实发奖归因、R8 风险裁决或自动经济处罚；Issue #44 的历史执行 AgentVersion 绑定仍未闭环。V1→V2 兼容适配、API/界面实际业务流和端到端试运行仍待分阶段建设。具体进度及限制见 `docs/engineering/v2-milestone-status.md`，以 `master` 和各开发分支的实时事实为准。
+本分支已修复 Next.js 及剩余依赖告警，干净安装后的完整 `npm audit` 为 **0 vulnerabilities**。在回归通过后，R8 已接入 v2 Bearer 认证的计划登记、政策发布、原子发奖及私有计划/收据查询 API，保留显式治理配置、签名/Mandate、跨版本去重和共享预算约束；默认空配置仍关闭写入。独立 PostgreSQL 16 验收通过 36 个迁移、协议及真实 HTTP/数据库测试，相关 lint、类型检查、生产构建通过。尚未部署或配置真实生产计划，MCP/界面、R8 风险规则、治理生命周期扩展、R7、Issue #44 和 V1→V2 整体切换仍待完成。详见[依赖清零与在线 API 验收](./docs/engineering/v2-m11-06-r8-online-api.md)、[API 契约](./docs/api.md)、[治理基础](./docs/engineering/v2-m11-06-r8-governance-atomic-awards.md)和[里程碑状态](./docs/engineering/v2-milestone-status.md)。
 
 ---
 
@@ -95,7 +95,7 @@ iWantU 是面向企业用户与外部 AI Agent 的 **B2B AI 能力供需撮合�
 
 ### 前置条件
 
-- **Node.js** 18+（推荐 20 LTS）
+- **Node.js** 20.9+（本地验证为 22.16.0，CI 使用 20）
 - **Docker** & Docker Compose（用于运行 PostgreSQL）
 - **npm**（随 Node.js 安装）
 

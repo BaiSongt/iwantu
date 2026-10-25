@@ -42,7 +42,8 @@ test('P1g：不同 Program / Settlement / role / slot 分别产生独立候选�
 });
 
 test('P1g：字段缺失、未知字段与非普通对象均拒绝', () => {
-  const {awardSlot, ...missing} = identity();
+  const missing = identity();
+  delete missing.awardSlot;
   reject(missing);
   reject({...identity(), isAuthorized: true});
   reject(null);

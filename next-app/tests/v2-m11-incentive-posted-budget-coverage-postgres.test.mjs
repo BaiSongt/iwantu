@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { requireR8PostgresTestTarget } from './helpers/r8-postgres-test-target.mjs';
 import { buildCreditProvenance, ensurePrincipalLedgerAccounts, ensureSystemLedgerAccounts } from '../src/lib/ledger/credit-foundation.mjs';
 import { postLedgerTransactionInTransaction } from '../src/lib/ledger/ledger-posting.mjs';
 import {
@@ -13,20 +14,7 @@ let connected = false;
 
 // 此测试只允许显式指定的本机独立测试库；所有账本写入均在同一个回滚事务中。
 before(async () => {
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl || process.env.IWANTU_R8_POSTGRES_TEST !== 'iwantu_test') {
-    throw new Error('R8-P1j 需显式设置 DATABASE_URL 与 IWANTU_R8_POSTGRES_TEST=iwantu_test');
-  }
-  const url = new URL(rawUrl);
-  const databaseName = decodeURIComponent(url.pathname.replace(/^\//, ''));
-  if (!['postgres:', 'postgresql:'].includes(url.protocol) ||
-      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      databaseName !== 'iwantu_test' ||
-      // 与现有 next-app-ci 的 ?schema=public 保持一致，仍拒绝任何非 public schema。
-      (url.searchParams.size !== 0 &&
-        (url.searchParams.size !== 1 || url.searchParams.get('schema') !== 'public'))) {
-    throw new Error('R8-P1j 仅允许本机 iwantu_test 数据库的默认测试 schema');
-  }
+  requireR8PostgresTestTarget();
   await prisma.$connect();
   connected = true;
 });
