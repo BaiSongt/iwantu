@@ -225,7 +225,7 @@ function transactionAsPostingInput(transaction) {
       .map((entry) => ({
         accountId: entry.accountId,
         side: entry.side,
-        amount: entry.amount.toString(),
+        amount: entry.amount.toFixed(MAX_FRACTION_DIGITS),
         provenance: entry.provenance ?? null,
       })),
   };
@@ -323,7 +323,7 @@ async function lockAndValidateAccounts(tx, normalized) {
           WHEN t."status" = 'posted' AND e."side" = 'credit' THEN e."amount"
           WHEN t."status" = 'posted' AND e."side" = 'debit' THEN -e."amount"
           ELSE 0
-        END), 0)::DECIMAL(36,8) AS "balance"
+        END), 0)::DECIMAL(36,8)::text AS "balance"
       FROM "ledger_accounts" a
       LEFT JOIN "ledger_entries" e ON e."accountId" = a."id"
       LEFT JOIN "ledger_transactions" t ON t."id" = e."transactionId"

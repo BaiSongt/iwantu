@@ -288,7 +288,7 @@ async function authorizeAcceptance(prisma, authentication, input, now) {
       buyerPrincipalId: target.task.issuerPrincipalId,
       buyerAgentIdentityId: target.task.issuerAgentIdentityId,
       supplierPrincipalId: target.offer.supplierPrincipalId,
-      priceAmount: String(target.revision.priceAmount),
+      priceAmount: target.revision.priceAmount.toFixed(),
       currency: target.revision.currency,
       nonce,
     });
@@ -319,14 +319,14 @@ async function authorizeAcceptance(prisma, authentication, input, now) {
       at: now,
       counterpartyPrincipalId: target.offer.supplierPrincipalId,
     });
-    assertAcceptanceEconomicLimit(authority, String(target.revision.priceAmount), target.revision.currency);
+    assertAcceptanceEconomicLimit(authority, target.revision.priceAmount.toFixed(), target.revision.currency);
     const boundContext = bindAuthorityToAuthentication(authentication, authority);
     const authoritySnapshot = await captureAuthoritySnapshot(
       tx,
       boundContext,
       {
         action: 'offer.accept',
-        economic: { singleContract: String(target.revision.priceAmount), currency: target.revision.currency },
+        economic: { singleContract: target.revision.priceAmount.toFixed(), currency: target.revision.currency },
         counterpartyPrincipalId: target.offer.supplierPrincipalId,
         commandHash,
         payloadHash: acceptanceHash,

@@ -145,7 +145,7 @@ async function createActor(label, orgType, actionScopes) {
   };
 }
 
-async function createContract(label) {
+async function createContract(label, priceAmount = '25.50000000') {
   const buyer = await createActor(
     `buyer-${label}`,
     'buyer',
@@ -176,7 +176,7 @@ async function createContract(label) {
   const now = new Date();
   const unsignedOffer = {
     taskId: task.task.id,
-    priceAmount: '25.50000000',
+    priceAmount,
     currency: 'IWC',
     deliveryCommitmentSeconds: 3600,
     validUntil: new Date(now.getTime() + 60 * 60_000),
@@ -244,7 +244,7 @@ async function createContract(label) {
     buyerPrincipalId: buyer.principal.id,
     buyerAgentIdentityId: buyer.agent.id,
     supplierPrincipalId: supplier.principal.id,
-    priceAmount: String(issued.revision.priceAmount),
+    priceAmount: issued.revision.priceAmount.toFixed(),
     currency: issued.revision.currency,
     nonce: acceptanceNonce,
   });
@@ -386,8 +386,8 @@ function signRejection(fixture, delivery, now = new Date()) {
   };
 }
 
-async function prepareDisputedContract(label) {
-  const fixture = await createContract(label);
+async function prepareDisputedContract(label, priceAmount = '25.50000000') {
+  const fixture = await createContract(label, priceAmount);
   const delivery = await submitSignedDelivery(
     prisma,
     fixture.supplier.authentication,
@@ -406,7 +406,7 @@ async function prepareDisputedContract(label) {
 
 function signMutualSettlement(prepared, supplierAmount, buyerRefundAmount, now = new Date()) {
   const { fixture, rejected } = prepared;
-  const grossAmount = String(fixture.formed.escrow.amount);
+  const grossAmount = fixture.formed.escrow.amount.toFixed(8);
   const evidence = buildMutualSettlementAgreementEvidence({
     contractId: fixture.formed.contract.id,
     effectiveContractHash: fixture.formed.contract.effectiveContractHash,
@@ -650,10 +650,10 @@ test('M8-02: unbalanced or one-sided allocation is not a MUTUAL_SPLIT', async ()
   );
 });
 
-test('M8-02: idempotent replay and concurrent calls converge to one Agreement, Settlement and Ledger posting', async () => {
-  const prepared = await prepareDisputedContract('mutual-concurrency');
+test('M8-02: smallest-unit split replay and concurrent calls converge to one Agreement, Settlement and Ledger posting', async () => {
+  const prepared = await prepareDisputedContract('mutual-concurrency', '0.00000002');
   const { fixture } = prepared;
-  const signed = signMutualSettlement(prepared, '12.75000000', '12.75000000');
+  const signed = signMutualSettlement(prepared, '0.00000001', '0.00000001');
 
   const [left, right] = await Promise.all([
     settleMutualSplit(
@@ -682,6 +682,8 @@ test('M8-02: idempotent replay and concurrent calls converge to one Agreement, S
   );
   assert.equal(replay.replayed, true);
   assert.equal(replay.settlement.id, left.settlement.id);
+  assert.equal(replay.agreement.supplierAmount.toFixed(8), '0.00000001');
+  assert.equal(replay.agreement.buyerRefundAmount.toFixed(8), '0.00000001');
 
   const [agreements, settlements, postings] = await Promise.all([
     prisma.$queryRaw`

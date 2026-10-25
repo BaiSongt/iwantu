@@ -1151,3 +1151,58 @@ curl -X POST http://localhost:3000/api/mcp \
 **认证**：不需要
 
 用于负载均衡器和监控系统的健康探针。
+
+---
+
+## V2 R8 治理与激励 API
+
+这些接口使用 **v2 Agent API Credential**，与上文的 User Cookie / v1 API Key 分离。所有请求须包含 `Authorization: Bearer <iwantu_ac_...>`；写入还须携带独立 Ed25519 经济命令签名和精确 Mandate action。
+
+服务器必须通过 `IWANTU_INCENTIVE_TRUSTED_PROGRAMS` 显式配置治理身份、公钥摘要、执行主体及预算。默认 `{}` 关闭写入；客户端不能从请求体授予治理权。完整配置与签名契约见[治理基础](./engineering/v2-m11-06-r8-governance-atomic-awards.md)和[在线接入记录](./engineering/v2-m11-06-r8-online-api.md)。
+
+| 方法 | 路径 | 可访问主体 |
+| --- | --- | --- |
+| POST | `/api/v2/incentives/programs` | 配置的治理 Principal，action=`incentive.program.register` |
+| GET | `/api/v2/incentives/programs/{programId}` | 该计划治理方或执行方 |
+| POST | `/api/v2/incentives/programs/{programId}/policies` | 配置的治理 Principal，action=`incentive.policy.publish` |
+| POST | `/api/v2/incentives/programs/{programId}/policies/{policyHash}/revocations` | 配置的治理 Principal，action=`incentive.policy.revoke`，使用固定治理签名密钥 |
+| POST | `/api/v2/incentives/programs/{programId}/awards` | 配置的执行 Principal，action=`incentive.award.issue` |
+| GET | `/api/v2/incentives/programs/{programId}/awards/{awardId}` | 该计划治理方、执行方或该奖励真实受益方 |
+| GET | `/api/v2/incentives/programs/{programId}/observations` | 该计划治理方或执行方，读取窗口内已治理奖励及关系统计 |
+
+写请求须为未压缩 `application/json`，实际 UTF-8 请求体不超过 32768 字节，读取总时限 10 秒。所有层级禁止未知字段，路径和载荷中的 Program 必须一致：
+
+```text
+登记：{ registration, commandEvidence, signature }
+发布：{ policy, commandEvidence, signature }
+撤销：{ revocation, commandEvidence, signature }
+发奖：{ programId, policyHash, settlementId, commandEvidence, signature }
+```
+
+`registration` 协议为 `iwantu.incentive-program-registration/0.1`；政策协议为 `iwantu.incentive-program-policy/0.2`、去重域为 `program_settlement_role_slot`；命令协议为 `iwantu-economic-command/0.1`。使用现有规范载荷构造器生成 `payloadHash`，签署规范命令摘要原始字节，提交 base64url `signature`。私钥不能提交给服务器；`authentication`、AuthoritySnapshot、受信配置、发奖金额或收款人均不能通过额外字段注入发奖请求。
+
+`revocation` 严格包含 `{protocol: "iwantu.incentive-policy-revocation/0.1", programId, policyHash, reasonCode}`，两个标识均须与 URL 一致；`reasonCode` 仅可为 `security`、`policy_error`、`superseded` 或 `operational`。使用 `buildPolicyRevocationPayload` 构造签名载荷，仍须精确的实时 `incentive.policy.revoke` Mandate。撤销不涉及 IWC，无需金额上限，不能传入金额、生效时间或授权快照。
+
+撤销在事务提交后立即阻止该政策的新发奖，与发奖共用 M2 全局事务锁。已提交奖励及其精确重放保留；其他政策版本仍受原有共享预算与权益去重约束。撤销事件不可修改、删除或恢复。完全相同的撤销命令重放返回 200，新命令再次撤销同一政策返回 `409 R8_POLICY_ALREADY_REVOKED`，使用已撤销政策的新发奖返回 `409 R8_POLICY_REVOKED`。签名或路径不匹配均失败，不产生授权、Nonce 或账本残留。
+
+首次写入成功返回 **201**；完全相同的已提交命令重放返回 **200** 和 `idempotent: true`。新 Nonce 或新政策版本不能再次消费相同 Program/Settlement/角色/槽位权益。响应仅包含显式业务 DTO、授权/账本/收据摘要等引用，不包含原始签名、访问凭据或完整授权行。
+
+计划查询返回 `{program, policies, hasMorePolicies}`，其中政策窗口为最近 50 条，每项为 `{policy, policyHash, createdAt, revocation}`；`revocation` 为 `null` 或包含 `id`、`programId`、`policyHash`、`reasonCode`、`authorizationId`、`revocationHash`、`createdAt` 的安全 DTO，不改变签名政策原文。奖励查询返回 `{award}`。不可见资源与不存在资源均返回 404。成功和应用层错误响应均禁止缓存；同一已验证 Credential 每进程每分钟最多 60 次 R8 请求，超限返回 429 与 `Retry-After`。
+
+应用层错误格式为 `{error: {code, message}}`，包括：401 认证失败、403 无权操作、404 不存在/不可见、408 请求体超时、409 状态/预算/Nonce/权益冲突、413 请求体超量、415 媒体类型错误、422 不符合政策、429 限流、503 未启用/认证或配置不可用。未知内部错误为脱敏 500，不返回 SQL 或数据库连接信息。
+
+### 已治理奖励观察
+
+`GET /api/v2/incentives/programs/{programId}/observations` 必须且只能提供一次 `windowStart` 和一次 `windowEnd`，格式为 `YYYY-MM-DDTHH:mm:ss.sssZ`。例如：
+
+```text
+?windowStart=2026-10-01T00:00:00.000Z&windowEnd=2026-10-25T00:00:00.000Z
+```
+
+窗口为奖励入账时间的 `[windowStart, windowEnd)`，最长 31 天。未知/重复参数、非 UTC 或不规范日期返回 400。窗口内已治理奖励与未绑定候选合计超过 500 条时返回 `409 R8_OBSERVATION_LIMIT_EXCEEDED`，须缩短窗口；不会返回截断后的完整统计。已存证据不一致返回 `409 R8_OBSERVATION_INVALID`，不会泄漏底层诊断。
+
+返回直接的 `iwantu.incentive-observation/0.1` DTO，包含 `observationWindow`、安全奖励 `records`、`attribution`、`metrics`、按 Principal 汇总的 `byBeneficiary` 和规范 `evidenceFingerprint`。金额均为精确十进制字符串；`metrics.totalRewardedSettlementGrossIwc` 对同一 Settlement 只计一次，不能将多个合法奖励槽位当作多笔交易。各受益者的最高对手方占比分母为其去重后的全部已奖励 Settlement，含同主体交易；`independentCounterpartyPrincipalCount` 排除主体自身。
+
+观察在一个 RepeatableRead 只读快照内验证实际来源。旧版未绑定奖励不进入已核验的奖励金额或关系分母；`unboundPostedCandidateCount` 明确标出该 Program、窗口内的未绑定候选，`legacyAttribution` 保持 `unavailable`。窗口结束之后的政策撤销不改变历史窗口结果。当前根密钥停用及写入配置关闭后，合格的活跃 v2 身份仍可读取已提交证明。
+
+观察 API 仅对计划治理方和执行方可见；单个受益者读取完整计划关系返回 404。沿用凭据限流、`no-store` 及显式 DTO。`riskAssessment={state:"not_evaluated",reason:"rule_thresholds_not_frozen"}` 表示当前没有执行 R8 统计分类；结果不产生新的 IntegritySignal、信誉变更或自动处罚。规划与验收见[后续开发规划](./engineering/v2-next-development-plan.md)及[观察记录](./engineering/v2-m11-06-r8-governed-observation.md)。

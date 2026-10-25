@@ -2,6 +2,13 @@
 
 > 连接 AI 需求方与 AI 能力方，帮助企业发布需求、匹配产品、筛选公司、启动 POC 与采购沟通。
 
+
+## V2 工程状态（2026-10-25，本功能分支）
+
+V2 与既有 V1 业务平台并行演进，**协议底座完成不等于 V2 产品端到端上线**。M1–M10 的身份/授权、Ledger、Task/Offer、Contract、Settlement、Reputation/Passport 等核心协议切片已合并至 `master`；M11 Integrity Engine 仍在开发，R1–R6 已合并，R7 Genesis Credit Loop 和 R8 Incentive Farming 位于独立开发分支。
+
+本分支已修复 Next.js 及剩余依赖告警，完整 `npm audit` 为 **0 vulnerabilities**。R8 已接入 v2 Bearer 认证的计划登记、政策发布、原子发奖、私有查询、单独政策撤销和已治理奖励观察，共 7 个接口。观察 API 核验历史签名、AuthoritySnapshot、终局结算/M9 与实际账本，提供精确金额及关系分母；R8 风险阈值尚未冻结，观察不自动判定舞弊。签名/Mandate、跨版本去重、共享预算与默认空配置关闭写入继续生效。最新 PostgreSQL 16 验收通过 37 个迁移和 **543/543** 项测试，相关 lint、类型检查、生产构建通过。尚未部署或配置真实生产计划；后续主线为 R8 规则与误报评估、R7 真库验收、动作/Passport 投影。详见[后续开发规划](./docs/engineering/v2-next-development-plan.md)、[观察验收](./docs/engineering/v2-m11-06-r8-governed-observation.md)、[API 契约](./docs/api.md)和[里程碑状态](./docs/engineering/v2-milestone-status.md)。
+
 ---
 
 ## 项目简介
@@ -88,7 +95,7 @@ iWantU 是面向企业用户与外部 AI Agent 的 **B2B AI 能力供需撮合�
 
 ### 前置条件
 
-- **Node.js** 18+（推荐 20 LTS）
+- **Node.js** 20.9+（本地验证为 22.16.0，CI 使用 20）
 - **Docker** & Docker Compose（用于运行 PostgreSQL）
 - **npm**（随 Node.js 安装）
 

@@ -1,6 +1,6 @@
 # iWANTU v2 Engineering Milestone Status
 
-Updated: 2026-09-21
+Updated: 2026-10-25 (R8 feature branch; master remains independently authoritative)
 
 This document is an engineering status companion to the v2 Living Baseline in Draft PR #1. It records implementation reality without replacing the product/protocol design documents.
 
@@ -406,6 +406,12 @@ This route is intentionally separate from the legacy `/api/public/agents` AgentP
 
 ## M11 — Integrity Engine — IN PROGRESS
 
+### 2026-10-25 development boundary (feature branch)
+
+M11 的 R1–R6 已合并至 `master`；R7 独立分支尚未在本次验收。R8 已接续到 `feature/v2-m11-r8-postgres-validation`，依次完成依赖告警清零、治理登记/政策/原子发奖、在线 API、单独政策撤销及已治理奖励观察，现有 7 个 v2 Bearer 认证接口。观察使用只读一致快照核验历史签名、AuthoritySnapshot、三类终局结算/M9、奖励与终局 Ledger 的 canonical hash，精确汇总奖励与去重交易分母；保留旧奖励归因缺口，尚不执行 R8 阈值分类。最新本地 PostgreSQL 16 验收：37 个迁移、461 项协议/HTTP 契约与来源不变量、38 项 R8 PostgreSQL、24 项真实在线 HTTP E2E、14 项安全 HTTP、6 项依赖兼容性测试全部 PASS（共 543 项）；相关 lint、Prisma Validate、Typecheck、Build 和全级别依赖审计 PASS，审计为 0 vulnerabilities。未部署、未选择真实治理身份，默认空配置关闭写入；远端 Actions 和 Docker PostgreSQL 15 尚未执行。详见[后续规划](./v2-next-development-plan.md)、[观察验收](./v2-m11-06-r8-governed-observation.md)、[撤销验收](./v2-m11-06-r8-policy-revocation.md)及[治理基础](./v2-m11-06-r8-governance-atomic-awards.md)。
+
+R8 新路径仅在受信服务器显式配置后，通过真实签名/实时 Mandate、已注册共享预算、冻结 0.2 政策和终局 Settlement 形成前瞻式奖励绑定。既有 P1 草案、历史奖励和旧读取接口不会被静默升级为已授权事实。政策单独撤销已在后续切片实现，详见[撤销与分支推送记录](./v2-m11-06-r8-policy-revocation.md)。预算增修、密钥轮换、历史计划迁移和 R8 风险统计规则仍待实现；不生成欺诈裁决或 I0–I4 处罚。M11-07/08、V1→V2 实际业务切换和 Issue #44 仍待完成。
+
 Goal:
 
 > Detect potentially manipulated reputation/economic patterns through deterministic, explainable signals while keeping Integrity separate from Reputation.
@@ -414,14 +420,14 @@ M11 consumes immutable protocol/economic facts and M10 projections. It must not 
 
 Work sequence:
 
-- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **IN IMPLEMENTATION**;
-- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING;
-- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION;
-- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW;
-- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER;
-- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING;
-- V2-M11-07 — I0–I4 action-ladder projection + Reputation Passport integration;
-- V2-M11-08 — PostgreSQL/rebuild/invariant hardening.
+- V2-M11-01 — immutable IntegritySignal schema + deterministic emission interface — **COMPLETE on master**;
+- V2-M11-02 — R1 SELF_TRADING / R2 SAME_PRINCIPAL_TRADING — **COMPLETE on master**;
+- V2-M11-03 — R3 HIGH_COUNTERPARTY_CONCENTRATION — **COMPLETE on master**;
+- V2-M11-04 — R4 HIGH_RECIPROCAL_FLOW — **COMPLETE on master**;
+- V2-M11-05 — R5 CIRCULAR_FLOW / R6 NEW_ACCOUNT_CLUSTER — **COMPLETE on master** (through PR #54);
+- V2-M11-06 — R7 GENESIS_CREDIT_LOOP / R8 INCENTIVE_FARMING — **IN PROGRESS; R8 governed awards, authenticated HTTP API, policy revocation and verified observations PASS locally; statistical rule calibration and broader governance lifecycle pending; R7 not verified in this run**;
+- V2-M11-07 — I0–I4 non-punitive action projection + Reputation Passport integration — **NOT STARTED**;
+- V2-M11-08 — PostgreSQL/replay/invariant hardening — **PARTIAL: R8 transaction/replay gates verified; full Integrity rebuild hardening pending**.
 
 ### V2-M11-01 boundary
 

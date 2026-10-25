@@ -207,7 +207,6 @@ function unsignedOfferInput(taskId, supplier, label, now = new Date(), overrides
 function signOfferCommand({
   action,
   supplier,
-  task,
   taskRevision,
   offerRevision,
   input,

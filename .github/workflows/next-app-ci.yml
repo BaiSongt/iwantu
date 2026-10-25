@@ -51,6 +51,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency security gate (all severities)
+        run: npm run audit
+
+      - name: Dependency compatibility regressions
+        run: npm run test:dependencies
+
       - name: Prisma validate
         run: npm run prisma:validate
 
@@ -59,6 +65,26 @@ jobs:
 
       - name: Apply migrations
         run: npm run prisma:migrate:deploy
+
+      # The HTTP E2E starts the built standalone server and must see clean
+      # historical coverage, before generic Ledger negative fixtures run.
+      - name: Build
+        run: npm run build
+
+      # Run coverage against the fresh migrated database before generic Ledger
+      # negative fixtures introduce intentionally unclassified historical facts.
+      - name: M11 R8 PostgreSQL governance, awards, coverage and revocation
+        env:
+          IWANTU_R8_POSTGRES_TEST: iwantu_test
+        run: npm run test:m11:postgres
+
+      - name: R8 authenticated production HTTP API
+        env:
+          IWANTU_R8_POSTGRES_TEST: iwantu_test
+        run: npm run test:m11:api
+
+      - name: Production authentication security smoke
+        run: npm run test:security:smoke
 
       - name: Invariant tests
         run: npm test
@@ -162,11 +188,20 @@ jobs:
       - name: M11 changed-code lint
         run: npm run lint:m11
 
+      - name: R8 governed incentive lint
+        run: npm run lint:r8-governance
+
+      - name: R8 HTTP API and dependency compatibility lint
+        run: npm run lint:r8-api
+
+      - name: R8 policy revocation regression lint
+        run: npm run lint:r8-revocation
+
+      - name: R8 governed observation lint
+        run: npm run lint:r8-observation
+
       - name: Typecheck
         run: npm run typecheck
-
-      - name: Build
-        run: npm run build
 
       # master currently carries legacy ESLint failures from React/Next rule changes.
       # Keep them visible without making unrelated UI cleanup a prerequisite for M1-M5.

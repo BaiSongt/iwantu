@@ -1,0 +1,49 @@
+# V2-M11-06 R8 激励事实来源基线（2026-10-23）
+
+## 当前事实边界
+
+R8 `INCENTIVE_FARMING` 首期不直接下舞弊结论。M2 的 `awardProtocolIncentive` 从有限 `system_incentive` 账户借记，向受益 Principal 的 `principal_available` 账户贷记，使用 `ledger_transactions(type=incentive,status=posted,referenceType=protocol_incentive_award)`，分录的 `provenance` 标记 `iwantu-credit-provenance/0.1`、`kind=incentive`、`programId`、`awardId`、`beneficiaryPrincipalId`。交易元数据亦保存 program/award/Principal。奖励事实不等于独立交易，不得把多次合法发奖自动推断为刷激励。
+
+本切片建立 `readIncentiveAwardFacts` 的只读事实层，不发布 R8 风险信号，不创建 I0–I4 处罚动作。数据查询要求主交易 POSTED、源凭证一致、借方来自有限奖励池且与贷方同额、信用方向/币种/受益主体正确；窗口采用 `[windowStart, windowEnd)`；最多 20 个 Principal、500 条奖励凭证，超过上限 Fail-Closed，避免基于截断数据判定风险。每笔事实包含 Principal、programId、awardId、referenceId、交易哈希、入账时刻、IWC 金额。`transactionHash` 仅用于追溯原始已入账事实，不能证明奖励动机。
+
+## 后续 R8 判定设计门槛
+
+1. 先明确具体奖励政策的计奖触发条件及版本化 program 规则。当前 M2 的 `awardProtocolIncentive` 并未强制奖励一定关联某个 Settlement，故不能仅通过奖励次数/金额推断 `INCENTIVE_FARMING`。
+2. 真实交易侧仅使用 M9 的终局 Settlement 派生 `ReputationEvidence`，必须排除中间状态、区分独立 Principal，并避免买方和供应方证据重复计数。
+3. 对协议上确实可由交易触发的奖励，先建立「奖励凭证 → 不可变触发事件」映射；没有映射的 program 应显示 `attribution_unavailable`，不得自动匹配最近交易。
+4. 如开展 R8 v0.1 统计观察，应限定明确窗口、独立对手方样本量、重复奖励比率及证据最低量；频次/集中度只生成可解释统计，不等同欺诈指控。阈值必须随规则版本冻结，避免与 R3/R4/R5 指标混同。
+5. 同一个 `referenceId = programId + ':' + awardId` 存在分隔符歧义的潜在协议风险；M2 现存设计未禁止标识中出现 `:`。本切片保留 M2 当前事实结构，不通过拆分 `referenceId` 反推 program/award，而是读取事务元数据和分录 provenance 的双向一致值；未来调整新版本 idempotency key 前须先设计旧凭证兼容策略。
+
+## 验收计划与已知限制
+
+- 可在无数据库依赖环境使用 `node --test tests/v2-m11-incentive-award-facts.test.mjs` 验证输入、查询形状、返回结果拒绝门禁（需要实际 `@prisma/client`，或明确声明本地模拟依赖）。
+- 真实 PostgreSQL Gate：独立 `iwantu_test` 数据库进行迁移，用真实 M2 发奖路径创建本金池/奖池/受益 Principal；正例查获奖励凭证，负例排除 Genesis/Purchased/未 POSTED、错误来源、时间边界和非奖励池分录；验证完全不修改 Ledger、ReputationEvidence、Trust。
+- 变更不可宣称已实现 R8 检测或资金穿透，不创建处罚动作；原生 Node + Prisma + PostgreSQL + lint + build 未全部执行前标记 `NOT_RUN`，不得以模拟测试冒充端到端通过。
+
+关联：Issue #48（M11），Issue #44（AgentVersion 不可变绑定独立议题）。
+
+## R8 PostgreSQL 独立验收入口（2026-10-24）
+
+新增 `next-app/tests/v2-m11-incentive-award-facts-postgres.test.mjs`，直接调用 M2 的 `fundProtocolIncentivePool`、`awardProtocolIncentive`、`issueGenesisCredit`、`issuePurchasedCredit` 和 R8 只读查询，不依赖 mock Prisma。真库验证覆盖：奖励池借方、受益 Principal、已入账交易哈希、跨来源隔离、半开时间窗口、稳定重放、查询只读、查询上限拒绝与原始发奖命令幂等。测试只创建全新测试主体和账本事实，不执行 `DELETE`、`TRUNCATE`、`DROP` 或清库命令。
+
+本测试为**显式选择运行的独立 Gate**，暂不加入 `test:invariants` 和 `next-app-ci`，防止未配置的 CI 或生产环境意外执行写入测试。脚本必须同时满足：`DATABASE_URL` 使用本机 PostgreSQL，数据库名称严格为 `iwantu_test`，并设置 `IWANTU_R8_POSTGRES_TEST=iwantu_test`；否则拒绝连接。执行方式：
+
+    cd next-app && IWANTU_R8_POSTGRES_TEST=iwantu_test npm run test:m11:postgres:r8
+
+先在专门创建的测试数据库完成 `npm ci`、`npm run prisma:generate` 和 `npm run prisma:migrate:deploy`；这些命令绝不能指向生产数据库。仓库原有 Docker/CI 测试环境可供参考，但这次没有自行启动或修改任何数据库。
+
+**验收状态：NOT_RUN。** 当前尚未取得具备真实 Prisma Client 和 PostgreSQL 的本地 exact-HEAD 执行报告；仅创建了验收用例及其命令入口。不能因测试文件存在就宣称 R8 已通过真库、已具备完整信号判定或能够归因某个 Settlement。`awardProtocolIncentive` 当前没有不可变的奖励触发事件关联，R8 继续保持证据只读与风险判定关闭，待协议来源边界冻结后再实现规则。
+
+## 2026-10-24 R8 标准双分录及触发归因门禁
+
+本轮收紧 R8 的奖励事实读取：除原有已入账交易、奖励池借方、受益主体贷方、币种、金额、Provenance 和交易哈希一致性检查外，还要求交易幂等键严格匹配现行 M2 `credit:incentive-award:<referenceId>` 格式，并且每笔标准奖励恰好有两条 LedgerEntry。额外分录拼接的非规范交易不作为标准奖励事实；这是证据筛选规则，不是对用户交易的修改。
+
+返回的事实集合新增 `triggerEventAttribution='unavailable'`、`r8RiskEvaluationEligible=false`：M2 目前未将奖励与不可变触发事件绑定，读取到合法奖励不等于证明其由某次 Settlement 触发，不生成 R8 风险判决或自动经济处罚。对未来新增的触发绑定应制定独立的有版本协议与兼容性策略，不追溯伪造旧记录。
+
+已运行使用实际修改源码、Prisma SQL 标签轻量替身的 V8 隔离测试，共 **5/5 PASS**；原生 Node invariants、Prisma Validate、PostgreSQL E2E、ESLint、Typecheck 和 Build 仍为 **NOT_RUN**。新增真库验收断言尚待在独立 `iwantu_test` 库执行，不能据此宣称真库通过。
+
+## 2026-10-24｜R8 触发归因方案与凭证结构加固
+
+已新增 [`R8 激励触发归因协议 RFC v0.1`](./v2-m11-06-r8-trigger-attribution-rfc.md)，明确选择前瞻式不可变奖励→终局 Settlement 绑定收据、保留旧奖励 `attribution_unavailable`、政策快照哈希及独立阶段门禁。**RFC 状态仍为 PROPOSED，尚未实现发奖触发绑定或 R8 风险规则。**
+
+为与 M2 `awardProtocolIncentive()` 的实际双分录顺序一致，只读标准奖励查询进一步要求奖池 debit 的 `entryIndex=0`、受益 Principal credit 的 `entryIndex=1`；新增 SQL 形状断言与 PostgreSQL 测试断言，不修改任何 Ledger 写入路径。使用远端实际源码与 Prisma 标签轻量替身的 V8 隔离执行 **11/11 PASS**；Node invariants、Prisma Validate、PostgreSQL E2E、ESLint、Typecheck 与 Build 均为 **NOT_RUN**，不能声明 R8 已验收。
